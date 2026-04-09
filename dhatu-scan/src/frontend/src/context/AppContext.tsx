@@ -1,0 +1,210 @@
+import {
+  type ReactNode,
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useReducer,
+} from "react";
+import type { Assessment, ChildProfile, GamificationState } from "../types";
+import { calculateXP, getLevel } from "../utils/assessmentLogic";
+import {
+  SAMPLE_CHILDREN,
+  SAMPLE_GAMIFICATION,
+  getAllSampleAssessments,
+} from "../utils/sampleData";
+import {
+  getAssessments,
+  getChildProfiles,
+  getGamificationState,
+  isInitialized,
+  markInitialized,
+  saveAssessment,
+  saveChildProfile,
+  saveGamificationState,
+} from "../utils/storage";
+
+interface AppState {
+  children: ChildProfile[];
+  assessments: Assessment[];
+  activeChildId: string | null;
+  gamification: GamificationState;
+  isLoading: boolean;
+}
+
+type AppAction =
+  | { type: "INIT"; payload: AppState }
+  | { type: "SET_CHILDREN"; payload: ChildProfile[] }
+  | { type: "SET_ACTIVE_CHILD"; payload: string | null }
+  | { type: "ADD_CHILD"; payload: ChildProfile }
+  | { type: "UPDATE_CHILD"; payload: ChildProfile }
+  | { type: "ADD_ASSESSMENT"; payload: Assessment }
+  | { type: "UPDATE_GAMIFICATION"; payload: GamificationState }
+  | { type: "SET_LOADING"; payload: boolean };
+
+const defaultGamification: GamificationState = {
+  xp: 0,
+  level: 1,
+  levelName: "Healthy Seed",
+  badges: [],
+  checkups: 0,
+  streak: 0,
+};
+
+const initialState: AppState = {
+  children: [],
+  assessments: [],
+  activeChildId: null,
+  gamification: defaultGamification,
+  isLoading: true,
+};
+
+function appReducer(state: AppState, action: AppAction): AppState {
+  switch (action.type) {
+    case "INIT":
+      return { ...action.payload, isLoading: false };
+    case "SET_CHILDREN":
+      return { ...state, children: action.payload };
+    case "SET_ACTIVE_CHILD":
+      return { ...state, activeChildId: action.payload };
+    case "ADD_CHILD":
+      return { ...state, children: [...state.children, action.payload] };
+    case "UPDATE_CHILD":
+      return {
+        ...state,
+        children: state.children.map((c) =>
+          c.id === action.payload.id ? action.payload : c,
+        ),
+      };
+    case "ADD_ASSESSMENT":
+      return {
+        ...state,
+        assessments: [action.payload, ...state.assessments],
+      };
+    case "UPDATE_GAMIFICATION":
+      return { ...state, gamification: action.payload };
+    case "SET_LOADING":
+      return { ...state, isLoading: action.payload };
+    default:
+      return state;
+  }
+}
+
+interface AppContextValue {
+  state: AppState;
+  activeChild: ChildProfile | null;
+  activeAssessments: Assessment[];
+  addChild: (child: ChildProfile) => void;
+  updateChild: (child: ChildProfile) => void;
+  setActiveChild: (id: string | null) => void;
+  addAssessment: (assessment: Assessment) => void;
+  awardXP: (xp: number) => void;
+}
+
+const AppContext = createContext<AppContextValue | null>(null);
+
+export function AppProvider({ children }: { children: ReactNode }) {
+  const [state, dispatch] = useReducer(appReducer, initialState);
+
+  // Initialize from localStorage on mount
+  useEffect(() => {
+    try {
+      if (!isInitialized()) {
+        // First load — seed sample data
+        for (const child of SAMPLE_CHILDREN) saveChildProfile(child);
+        for (const assessment of getAllSampleAssessments())
+          saveAssessment(assessment);
+        saveGamificationState(SAMPLE_GAMIFICATION);
+        markInitialized();
+      }
+
+      const childProfiles = getChildProfiles();
+      const allAssessments = getAssessments();
+      const gamification = getGamificationState() ?? defaultGamification;
+
+      dispatch({
+        type: "INIT",
+        payload: {
+          children: childProfiles,
+          assessments: allAssessments,
+          activeChildId: childProfiles[0]?.id ?? null,
+          gamification,
+          isLoading: false,
+        },
+      });
+    } catch (err) {
+      console.error("Failed to initialize app state:", err);
+      dispatch({ type: "SET_LOADING", payload: false });
+    }
+  }, []);
+
+  const addChild = useCallback((child: ChildProfile) => {
+    saveChildProfile(child);
+    dispatch({ type: "ADD_CHILD", payload: child });
+    dispatch({ type: "SET_ACTIVE_CHILD", payload: child.id });
+  }, []);
+
+  const updateChild = useCallback((child: ChildProfile) => {
+    saveChildProfile(child);
+    dispatch({ type: "UPDATE_CHILD", payload: child });
+  }, []);
+
+  const setActiveChild = useCallback((id: string | null) => {
+    dispatch({ type: "SET_ACTIVE_CHILD", payload: id });
+  }, []);
+
+  const awardXP = useCallback(
+    (xp: number) => {
+      const updated: GamificationState = {
+        ...state.gamification,
+        xp: state.gamification.xp + xp,
+        checkups: state.gamification.checkups + 1,
+      };
+      const levelInfo = getLevel(updated.xp);
+      updated.level = levelInfo.level;
+      updated.levelName = levelInfo.name;
+      saveGamificationState(updated);
+      dispatch({ type: "UPDATE_GAMIFICATION", payload: updated });
+    },
+    [state.gamification],
+  );
+
+  const addAssessment = useCallback(
+    (assessment: Assessment) => {
+      saveAssessment(assessment);
+      dispatch({ type: "ADD_ASSESSMENT", payload: assessment });
+      const xp = calculateXP(assessment);
+      awardXP(xp);
+    },
+    [awardXP],
+  );
+
+  const activeChild =
+    state.children.find((c) => c.id === state.activeChildId) ?? null;
+  const activeAssessments = state.assessments.filter(
+    (a) => a.childId === state.activeChildId,
+  );
+
+  return (
+    <AppContext.Provider
+      value={{
+        state,
+        activeChild,
+        activeAssessments,
+        addChild,
+        updateChild,
+        setActiveChild,
+        addAssessment,
+        awardXP,
+      }}
+    >
+      {children}
+    </AppContext.Provider>
+  );
+}
+
+export function useApp() {
+  const ctx = useContext(AppContext);
+  if (!ctx) throw new Error("useApp must be used within AppProvider");
+  return ctx;
+}

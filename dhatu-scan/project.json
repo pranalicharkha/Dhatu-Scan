@@ -1,0 +1,29 @@
+{
+  "overview": "Dhatu-Scan is a privacy-first AI-powered Progressive Web App for early detection of child malnutrition. It uses smartphone camera analysis, WHO growth standards, dietary risk scoring, and gamification to help parents, caregivers, NGOs, and healthcare workers identify at-risk children early.",
+  "features": [
+    "Camera-based body analysis with pose guidance overlay",
+    "Multi-step child health assessment form",
+    "WHO Z-score simulation and malnutrition risk scoring",
+    "Results dashboard with circular gauges and recommendation cards",
+    "Growth history tracking with trend charts",
+    "Gamification with badges, XP points, and level progression",
+    "Privacy-first on-device processing with face masking",
+    "Offline-capable PWA with local data storage",
+    "Glassmorphism premium UI with dark mode",
+    "Mobile-first responsive design with bottom navigation"
+  ],
+  "category": "healthcare",
+  "tags": [
+    "healthcare",
+    "ai",
+    "malnutrition",
+    "child-health",
+    "pwa",
+    "camera",
+    "who-standards",
+    "gamification",
+    "privacy",
+    "mobile-first"
+  ],
+  "last_updated": "2026-04-09T12:23:28.393Z"
+}
