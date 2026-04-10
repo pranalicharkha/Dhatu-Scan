@@ -1,5 +1,4 @@
-import { Outlet } from "@tanstack/react-router";
-import { useLocation } from "@tanstack/react-router";
+import { Outlet, useLocation } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "motion/react";
 import { useApp } from "../context/AppContext";
 import BottomNav from "./BottomNav";
@@ -10,15 +9,14 @@ import Sidebar from "./Sidebar";
 export default function Layout() {
   const location = useLocation();
   const { state } = useApp();
-
   if (state.isLoading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="text-center">
-          <div className="w-16 h-16 rounded-2xl gradient-teal flex items-center justify-center mx-auto mb-4 shadow-glow-teal">
-            <span className="text-3xl">🔬</span>
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl gradient-teal shadow-glow-teal">
+            <span className="text-2xl font-bold text-primary-foreground">DS</span>
           </div>
-          <h1 className="font-display font-bold text-xl text-foreground mb-2">
+          <h1 className="mb-2 font-display text-xl font-bold text-foreground">
             Dhatu-Scan
           </h1>
           <LoadingSpinner label="Initializing..." />
@@ -27,18 +25,19 @@ export default function Layout() {
     );
   }
 
-  const isLandingPage = location.pathname === "/";
+  const isPublicPage = location.pathname === "/";
+  const showShell = state.isAuthenticated && !isPublicPage;
 
   return (
-    <div className="min-h-screen bg-background text-foreground relative">
-      {/* Animated background */}
-      <FloatingParticles />
+    <div
+      className={showShell ? "app-shell-light relative min-h-screen text-foreground" : "relative min-h-screen text-foreground"}
+      style={showShell ? { backgroundColor: "#F2EAE0" } : undefined}
+    >
+      {!showShell && <FloatingParticles />}
 
-      {/* Desktop sidebar */}
-      <Sidebar />
+      {showShell && <Sidebar />}
 
-      {/* Main content area */}
-      <div className="md:ml-64 relative z-10">
+      <div className={showShell ? "relative z-10 md:ml-72" : "relative z-10"}>
         <AnimatePresence mode="wait">
           <motion.main
             key={location.pathname}
@@ -46,16 +45,18 @@ export default function Layout() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.25, ease: "easeOut" }}
-            className={isLandingPage ? "" : "pb-24 md:pb-8"}
+            className={showShell ? "pb-24 md:pb-8" : ""}
           >
             <Outlet />
           </motion.main>
         </AnimatePresence>
 
-        {/* Footer — desktop only, hidden on landing */}
-        {!isLandingPage && (
-          <footer className="hidden md:block px-8 py-4 border-t border-white/10 bg-card/50">
-            <p className="text-xs text-muted-foreground text-center">
+        {!isPublicPage && (
+          <footer
+            className="hidden px-8 py-4 md:block"
+            style={showShell ? { borderTop: "1px solid #d7cabb", backgroundColor: "#F2EAE0" } : undefined}
+          >
+            <p className="text-center text-xs text-muted-foreground">
               © {new Date().getFullYear()}. Built with love using{" "}
               <a
                 href={`https://caffeine.ai?utm_source=caffeine-footer&utm_medium=referral&utm_content=${encodeURIComponent(typeof window !== "undefined" ? window.location.hostname : "")}`}
@@ -70,8 +71,7 @@ export default function Layout() {
         )}
       </div>
 
-      {/* Mobile bottom navigation */}
-      <BottomNav />
+      {showShell && <BottomNav />}
     </div>
   );
 }

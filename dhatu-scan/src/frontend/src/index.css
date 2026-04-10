@@ -106,6 +106,34 @@
     overflow-x: hidden;
   }
 
+  .app-shell-light {
+    --background: 0.95 0.01 80;
+    --foreground: 0.36 0.03 320;
+    --card: 0.92 0.012 68;
+    --card-foreground: 0.36 0.03 320;
+    --popover: 0.94 0.01 78;
+    --popover-foreground: 0.36 0.03 320;
+    --primary: 0.68 0.05 300;
+    --primary-foreground: 0.98 0.004 80;
+    --secondary: 0.82 0.03 230;
+    --secondary-foreground: 0.32 0.03 300;
+    --muted: 0.9 0.01 80;
+    --muted-foreground: 0.56 0.02 310;
+    --accent: 0.78 0.045 285;
+    --accent-foreground: 0.98 0.004 80;
+    --border: 0.84 0.014 75;
+    --input: 0.88 0.012 76;
+    --ring: 0.68 0.05 300;
+    --sidebar: 0.95 0.01 80;
+    --sidebar-foreground: 0.36 0.03 320;
+    --sidebar-primary: 0.68 0.05 300;
+    --sidebar-primary-foreground: 0.98 0.004 80;
+    --sidebar-accent: 0.9 0.01 80;
+    --sidebar-accent-foreground: 0.38 0.03 320;
+    --sidebar-border: 0.84 0.014 75;
+    --sidebar-ring: 0.68 0.05 300;
+  }
+
   /* Custom scrollbar */
   ::-webkit-scrollbar {
     width: 6px;
@@ -173,6 +201,35 @@
 
   .glass-effect-dark {
     @apply bg-white/5 backdrop-blur-md border border-white/10;
+  }
+
+  .app-shell-light .glass-card {
+    background: rgba(255, 250, 245, 0.42);
+    border: 1px solid rgba(156, 143, 203, 0.18);
+    box-shadow: 0 14px 32px rgba(120, 101, 152, 0.08), inset 0 1px 0
+      rgba(255, 255, 255, 0.5);
+  }
+
+  .app-shell-light .glass-card-light {
+    background: rgba(255, 250, 245, 0.56);
+    border: 1px solid rgba(156, 143, 203, 0.2);
+    box-shadow: 0 12px 28px rgba(120, 101, 152, 0.06), inset 0 1px 0
+      rgba(255, 255, 255, 0.58);
+  }
+
+  .app-shell-light .glass-effect {
+    background: rgba(255, 250, 245, 0.5);
+    border-color: rgba(156, 143, 203, 0.18);
+  }
+
+  .app-shell-light .glass-effect-dark {
+    background: rgba(244, 235, 224, 0.56);
+    border-color: rgba(156, 143, 203, 0.18);
+  }
+
+  .app-shell-light .card-elevated {
+    box-shadow: 0 16px 36px rgba(120, 101, 152, 0.08), inset 0 1px 0
+      rgba(255, 255, 255, 0.45);
   }
 
   .card-elevated {

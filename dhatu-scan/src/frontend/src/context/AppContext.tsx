@@ -17,11 +17,13 @@ import {
   getAssessments,
   getChildProfiles,
   getGamificationState,
+  isAuthenticated,
   isInitialized,
   markInitialized,
   saveAssessment,
   saveChildProfile,
   saveGamificationState,
+  setAuthenticated,
 } from "../utils/storage";
 
 interface AppState {
@@ -29,6 +31,7 @@ interface AppState {
   assessments: Assessment[];
   activeChildId: string | null;
   gamification: GamificationState;
+  isAuthenticated: boolean;
   isLoading: boolean;
 }
 
@@ -56,6 +59,7 @@ const initialState: AppState = {
   assessments: [],
   activeChildId: null,
   gamification: defaultGamification,
+  isAuthenticated: false,
   isLoading: true,
 };
 
@@ -94,6 +98,8 @@ interface AppContextValue {
   state: AppState;
   activeChild: ChildProfile | null;
   activeAssessments: Assessment[];
+  signIn: () => void;
+  signOut: () => void;
   addChild: (child: ChildProfile) => void;
   updateChild: (child: ChildProfile) => void;
   setActiveChild: (id: string | null) => void;
@@ -121,6 +127,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const childProfiles = getChildProfiles();
       const allAssessments = getAssessments();
       const gamification = getGamificationState() ?? defaultGamification;
+      const auth = isAuthenticated();
 
       dispatch({
         type: "INIT",
@@ -129,6 +136,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           assessments: allAssessments,
           activeChildId: childProfiles[0]?.id ?? null,
           gamification,
+          isAuthenticated: auth,
           isLoading: false,
         },
       });
@@ -185,12 +193,38 @@ export function AppProvider({ children }: { children: ReactNode }) {
     (a) => a.childId === state.activeChildId,
   );
 
+  const signIn = useCallback(() => {
+    setAuthenticated(true);
+    dispatch({
+      type: "INIT",
+      payload: {
+        ...state,
+        isAuthenticated: true,
+        isLoading: false,
+      },
+    });
+  }, [state]);
+
+  const signOut = useCallback(() => {
+    setAuthenticated(false);
+    dispatch({
+      type: "INIT",
+      payload: {
+        ...state,
+        isAuthenticated: false,
+        isLoading: false,
+      },
+    });
+  }, [state]);
+
   return (
     <AppContext.Provider
       value={{
         state,
         activeChild,
         activeAssessments,
+        signIn,
+        signOut,
         addChild,
         updateChild,
         setActiveChild,

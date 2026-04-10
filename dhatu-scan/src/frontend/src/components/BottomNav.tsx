@@ -1,5 +1,5 @@
 import { Link, useLocation } from "@tanstack/react-router";
-import { Activity, Camera, Clock, Home, Star } from "lucide-react";
+import { Activity, ClipboardList, Home, Shield, Star } from "lucide-react";
 import { motion } from "motion/react";
 import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
@@ -11,11 +11,11 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { href: "/", label: "Home", icon: <Home size={20} /> },
-  { href: "/camera", label: "Scan", icon: <Camera size={20} /> },
+  { href: "/dashboard", label: "Home", icon: <Home size={20} /> },
+  { href: "/screening", label: "Screening", icon: <ClipboardList size={20} /> },
   { href: "/results", label: "Results", icon: <Activity size={20} /> },
-  { href: "/history", label: "History", icon: <Clock size={20} /> },
-  { href: "/gamification", label: "Rewards", icon: <Star size={20} /> },
+  { href: "/rewards", label: "Rewards", icon: <Star size={20} /> },
+  { href: "/privacy", label: "Privacy", icon: <Shield size={20} /> },
 ];
 
 export default function BottomNav() {
@@ -27,22 +27,24 @@ export default function BottomNav() {
       aria-label="Mobile navigation"
       data-ocid="bottom-nav"
     >
-      {/* Glassmorphism bar */}
-      <div className="glass-card border-t border-white/10 px-2 pt-2 pb-safe">
+      <div
+        className="px-2 pt-2 pb-safe"
+        style={{ backgroundColor: "#F2EAE0", borderTop: "1px solid #d7cabb" }}
+      >
         <div className="flex items-center justify-around">
           {NAV_ITEMS.map((item) => {
             const isActive = location.pathname === item.href;
+
             return (
               <Link
                 key={item.href}
                 to={item.href}
                 className={cn(
-                  "flex flex-col items-center gap-1 px-3 py-2 rounded-xl min-w-[44px] min-h-[44px] justify-center transition-smooth relative",
+                  "relative flex min-h-[44px] min-w-[44px] flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 transition-smooth",
                   isActive
                     ? "text-primary"
                     : "text-muted-foreground hover:text-foreground",
                 )}
-                data-ocid={`nav-${item.label.toLowerCase()}`}
               >
                 {isActive && (
                   <motion.div
@@ -51,24 +53,8 @@ export default function BottomNav() {
                     transition={{ type: "spring", stiffness: 400, damping: 30 }}
                   />
                 )}
-                <span className="relative z-10">
-                  {isActive ? (
-                    <motion.span
-                      initial={{ scale: 0.8 }}
-                      animate={{ scale: 1 }}
-                      transition={{
-                        type: "spring",
-                        stiffness: 400,
-                        damping: 20,
-                      }}
-                    >
-                      {item.icon}
-                    </motion.span>
-                  ) : (
-                    item.icon
-                  )}
-                </span>
-                <span className="text-[10px] font-medium relative z-10 leading-none">
+                <span className="relative z-10">{item.icon}</span>
+                <span className="relative z-10 text-[10px] font-medium leading-none">
                   {item.label}
                 </span>
               </Link>

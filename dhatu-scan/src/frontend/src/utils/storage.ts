@@ -5,6 +5,7 @@ const KEYS = {
   CHILDREN: "dhatu_children",
   GAMIFICATION: "dhatu_gamification",
   INITIALIZED: "dhatu_initialized",
+  AUTH: "dhatu_auth",
 } as const;
 
 function safeGet<T>(key: string): T | null {
@@ -104,4 +105,12 @@ export function exportData(): string {
     exportedAt: new Date().toISOString(),
   };
   return JSON.stringify(data, null, 2);
+}
+
+export function isAuthenticated(): boolean {
+  return localStorage.getItem(KEYS.AUTH) === "true";
+}
+
+export function setAuthenticated(value: boolean): void {
+  localStorage.setItem(KEYS.AUTH, value ? "true" : "false");
 }
