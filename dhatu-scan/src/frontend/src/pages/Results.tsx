@@ -8,7 +8,6 @@ import {
   getRiskLevelColor,
   getWHOStatusColor,
 } from "@/utils/assessmentLogic";
-import { getAssessments } from "@/utils/storage";
 import { useNavigate } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
@@ -569,14 +568,11 @@ export default function Results() {
 
   const assessment: Assessment | null =
     latestFromContext ??
-    (() => {
-      const all = getAssessments();
-      return all.length > 0
-        ? [...all].sort(
-            (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
-          )[0]
-        : null;
-    })();
+    (state.assessments.length > 0
+      ? [...state.assessments].sort(
+          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+        )[0]
+      : null);
 
   // If truly no data, show placeholder
   if (!assessment) {

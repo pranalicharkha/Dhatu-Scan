@@ -1,12 +1,12 @@
 import { useCallback } from "react";
 import { useApp } from "../context/AppContext";
+import { saveGamification } from "../data/gamificationRepository";
 import type { Badge, GamificationState } from "../types";
 import {
   ALL_BADGES,
   getLevel,
   getLevelProgress,
 } from "../utils/assessmentLogic";
-import { saveGamificationState } from "../utils/storage";
 
 interface UseGamificationReturn {
   gamification: GamificationState;
@@ -62,7 +62,7 @@ export function useGamification(): UseGamificationReturn {
       updated.level = levelInfo.level;
       updated.levelName = levelInfo.name;
 
-      saveGamificationState(updated);
+      void saveGamification(updated);
       return newBadge;
     },
     [gamification],

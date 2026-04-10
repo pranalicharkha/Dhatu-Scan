@@ -1,6 +1,6 @@
 import GlassCard from "@/components/GlassCard";
 import { useApp } from "@/context/AppContext";
-import { clearAllData, exportData, getAssessments } from "@/utils/storage";
+import { clearDhatuScanDb } from "@/data/db";
 import {
   CheckCircle2,
   ChevronDown,
@@ -183,16 +183,22 @@ function FaqItem({ q, a, index }: { q: string; a: string; index: number }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────
 export default function Privacy() {
-  useApp();
+  const { state } = useApp();
   const [showConfirm, setShowConfirm] = useState(false);
   const [cleared, setCleared] = useState(false);
 
-  const assessmentCount = getAssessments().length;
-  const storageBytes = JSON.stringify(localStorage).length;
+  const assessmentCount = state.assessments.length;
+  const exportPayload = {
+    children: state.children,
+    assessments: state.assessments,
+    gamification: state.gamification,
+    exportedAt: new Date().toISOString(),
+  };
+  const storageBytes = JSON.stringify(exportPayload).length;
   const storageKB = (storageBytes / 1024).toFixed(1);
 
   function handleExport() {
-    const json = exportData();
+    const json = JSON.stringify(exportPayload, null, 2);
     const blob = new Blob([json], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -202,8 +208,9 @@ export default function Privacy() {
     URL.revokeObjectURL(url);
   }
 
-  function handleClearConfirm() {
-    clearAllData();
+  async function handleClearConfirm() {
+    await clearDhatuScanDb();
+    localStorage.removeItem("dhatu_indexeddb_initialized");
     setCleared(true);
     setShowConfirm(false);
   }

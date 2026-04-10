@@ -15,7 +15,6 @@ import {
   getRiskCategory,
   waterSourceToScore,
 } from "@/utils/assessmentLogic";
-import { saveAssessment, saveChildProfile } from "@/utils/storage";
 /**
  * Form.tsx — Multi-step Child Details Form
  * Steps: 1) Child Info  2) Body Measurements  3) Dietary Assessment  4) Lifestyle
@@ -138,7 +137,7 @@ const slideVariants = {
 // ─── Main component ────────────────────────────────────────────────────────────
 export default function Form() {
   const navigate = useNavigate();
-  const { addChild, addAssessment, state } = useApp();
+  const { addChild, updateChild, addAssessment, state } = useApp();
 
   const [step, setStep] = useState(0);
   const [direction, setDirection] = useState(1);
@@ -214,8 +213,8 @@ export default function Form() {
         createdAt: existingChild?.createdAt ?? now,
         updatedAt: now,
       };
-      saveChildProfile(childProfile);
-      if (!existingChild) addChild(childProfile);
+      if (existingChild) updateChild(childProfile);
+      else addChild(childProfile);
 
       // Calculate scores
       const bmi = calculateBMI(w, h);
@@ -251,7 +250,6 @@ export default function Form() {
         notes: form.medicalConditions || undefined,
       };
 
-      saveAssessment(assessment);
       addAssessment(assessment);
 
       navigate({ to: "/results" });

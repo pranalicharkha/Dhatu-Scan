@@ -1,7 +1,7 @@
 import GlassCard from "@/components/GlassCard";
 import { useApp } from "@/context/AppContext";
+import { deleteAssessmentRecord } from "@/data/assessmentRepository";
 import type { Assessment, ChildProfile } from "@/types/index";
-import { deleteAssessment } from "@/utils/storage";
 import {
   Activity,
   AlertCircle,
@@ -511,7 +511,7 @@ export default function History() {
   }, [filtered, children]);
 
   const handleDelete = (id: string) => {
-    deleteAssessment(id);
+    void deleteAssessmentRecord(id);
     setLocalAssessments((prev) => prev.filter((a) => a.id !== id));
   };
 

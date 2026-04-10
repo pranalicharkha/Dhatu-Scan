@@ -6,6 +6,15 @@ import {
   useEffect,
   useReducer,
 } from "react";
+import {
+  getAssessments,
+  saveAssessmentRecord,
+} from "../data/assessmentRepository";
+import { getChildren, saveChild } from "../data/childRepository";
+import {
+  getGamification,
+  saveGamification,
+} from "../data/gamificationRepository";
 import type { Assessment, ChildProfile, GamificationState } from "../types";
 import { calculateXP, getLevel } from "../utils/assessmentLogic";
 import {
@@ -13,18 +22,6 @@ import {
   SAMPLE_GAMIFICATION,
   getAllSampleAssessments,
 } from "../utils/sampleData";
-import {
-  getAssessments,
-  getChildProfiles,
-  getGamificationState,
-  isAuthenticated,
-  isInitialized,
-  markInitialized,
-  saveAssessment,
-  saveChildProfile,
-  saveGamificationState,
-  setAuthenticated,
-} from "../utils/storage";
 
 interface AppState {
   children: ChildProfile[];
@@ -63,6 +60,27 @@ const initialState: AppState = {
   isLoading: true,
 };
 
+const META_KEYS = {
+  INITIALIZED: "dhatu_indexeddb_initialized",
+  AUTH: "dhatu_auth",
+} as const;
+
+function isInitialized(): boolean {
+  return localStorage.getItem(META_KEYS.INITIALIZED) === "true";
+}
+
+function markInitialized(): void {
+  localStorage.setItem(META_KEYS.INITIALIZED, "true");
+}
+
+function isAuthenticated(): boolean {
+  return localStorage.getItem(META_KEYS.AUTH) === "true";
+}
+
+function setAuthenticated(value: boolean): void {
+  localStorage.setItem(META_KEYS.AUTH, value ? "true" : "false");
+}
+
 function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
     case "INIT":
@@ -76,8 +94,8 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case "UPDATE_CHILD":
       return {
         ...state,
-        children: state.children.map((c) =>
-          c.id === action.payload.id ? action.payload : c,
+        children: state.children.map((child) =>
+          child.id === action.payload.id ? action.payload : child,
         ),
       };
     case "ADD_ASSESSMENT":
@@ -112,48 +130,59 @@ const AppContext = createContext<AppContextValue | null>(null);
 export function AppProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(appReducer, initialState);
 
-  // Initialize from localStorage on mount
   useEffect(() => {
-    try {
-      if (!isInitialized()) {
-        // First load — seed sample data
-        for (const child of SAMPLE_CHILDREN) saveChildProfile(child);
-        for (const assessment of getAllSampleAssessments())
-          saveAssessment(assessment);
-        saveGamificationState(SAMPLE_GAMIFICATION);
-        markInitialized();
+    let cancelled = false;
+
+    async function initialize() {
+      try {
+        if (!isInitialized()) {
+          for (const child of SAMPLE_CHILDREN) await saveChild(child);
+          for (const assessment of getAllSampleAssessments()) {
+            await saveAssessmentRecord(assessment);
+          }
+          await saveGamification(SAMPLE_GAMIFICATION);
+          markInitialized();
+        }
+
+        const childProfiles = await getChildren();
+        const allAssessments = await getAssessments();
+        const gamification = await getGamification();
+        const auth = isAuthenticated();
+
+        if (cancelled) return;
+
+        dispatch({
+          type: "INIT",
+          payload: {
+            children: childProfiles,
+            assessments: allAssessments,
+            activeChildId: childProfiles[0]?.id ?? null,
+            gamification: gamification ?? defaultGamification,
+            isAuthenticated: auth,
+            isLoading: false,
+          },
+        });
+      } catch (err) {
+        console.error("Failed to initialize app state:", err);
+        if (!cancelled) dispatch({ type: "SET_LOADING", payload: false });
       }
-
-      const childProfiles = getChildProfiles();
-      const allAssessments = getAssessments();
-      const gamification = getGamificationState() ?? defaultGamification;
-      const auth = isAuthenticated();
-
-      dispatch({
-        type: "INIT",
-        payload: {
-          children: childProfiles,
-          assessments: allAssessments,
-          activeChildId: childProfiles[0]?.id ?? null,
-          gamification,
-          isAuthenticated: auth,
-          isLoading: false,
-        },
-      });
-    } catch (err) {
-      console.error("Failed to initialize app state:", err);
-      dispatch({ type: "SET_LOADING", payload: false });
     }
+
+    initialize();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const addChild = useCallback((child: ChildProfile) => {
-    saveChildProfile(child);
+    void saveChild(child);
     dispatch({ type: "ADD_CHILD", payload: child });
     dispatch({ type: "SET_ACTIVE_CHILD", payload: child.id });
   }, []);
 
   const updateChild = useCallback((child: ChildProfile) => {
-    saveChildProfile(child);
+    void saveChild(child);
     dispatch({ type: "UPDATE_CHILD", payload: child });
   }, []);
 
@@ -171,7 +200,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const levelInfo = getLevel(updated.xp);
       updated.level = levelInfo.level;
       updated.levelName = levelInfo.name;
-      saveGamificationState(updated);
+      void saveGamification(updated);
       dispatch({ type: "UPDATE_GAMIFICATION", payload: updated });
     },
     [state.gamification],
@@ -179,7 +208,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const addAssessment = useCallback(
     (assessment: Assessment) => {
-      saveAssessment(assessment);
+      void saveAssessmentRecord(assessment);
       dispatch({ type: "ADD_ASSESSMENT", payload: assessment });
       const xp = calculateXP(assessment);
       awardXP(xp);
@@ -188,9 +217,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 
   const activeChild =
-    state.children.find((c) => c.id === state.activeChildId) ?? null;
+    state.children.find((child) => child.id === state.activeChildId) ?? null;
   const activeAssessments = state.assessments.filter(
-    (a) => a.childId === state.activeChildId,
+    (assessment) => assessment.childId === state.activeChildId,
   );
 
   const signIn = useCallback(() => {
