@@ -51,24 +51,6 @@ export default function Layout() {
           </motion.main>
         </AnimatePresence>
 
-        {!isPublicPage && (
-          <footer
-            className="hidden px-8 py-4 md:block"
-            style={showShell ? { borderTop: "1px solid #d7cabb", backgroundColor: "#F2EAE0" } : undefined}
-          >
-            <p className="text-center text-xs text-muted-foreground">
-              © {new Date().getFullYear()}. Built with love using{" "}
-              <a
-                href={`https://caffeine.ai?utm_source=caffeine-footer&utm_medium=referral&utm_content=${encodeURIComponent(typeof window !== "undefined" ? window.location.hostname : "")}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-primary hover:underline"
-              >
-                caffeine.ai
-              </a>
-            </p>
-          </footer>
-        )}
       </div>
 
       {showShell && <BottomNav />}

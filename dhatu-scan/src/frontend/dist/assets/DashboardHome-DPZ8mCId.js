@@ -1,4 +1,4 @@
-import { a as useApp, j as jsxRuntimeExports, L as Link } from "./index-BzFT_KhA.js";
+import { a as useApp, j as jsxRuntimeExports, L as Link } from "./index-CgOSgeFQ.js";
 const DASHBOARD_BG = "#F2EAE0";
 const SURFACE = "rgba(255, 250, 245, 0.42)";
 const SURFACE_ALT = "rgba(255, 250, 245, 0.56)";

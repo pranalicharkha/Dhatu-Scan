@@ -1,4 +1,4 @@
-const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["./ScreeningHub-Drz36Y4y.js","./GlassCard-BSN70r43.js","./Camera-DZ7fNPZ6.js","./eye-Ca32V5h5.js","./lock-CHee1eis.js","./circle-check-big-DaRJoNP_.js","./Form-BebQdRu7.js","./Results-DWImpGCX.js","./generateCategoricalChart-DDxlgnge.js","./History-BL-25vr2.js","./trash-2-BGfX2lOK.js","./calendar-D06CshlX.js","./Gamification-CscuiuFj.js","./Consult-DxotT0TX.js","./Privacy-DXzM9_m7.js"])))=>i.map(i=>d[i]);
+const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["./ScreeningHub-DlCp9q23.js","./GlassCard-CyzsPCNP.js","./Camera-D74HzZ8l.js","./eye-DtpuVE8g.js","./lock-CeR0i-PO.js","./circle-check-big-GluNNnkl.js","./Form-k7GN7OEt.js","./Results-CSqaxXSY.js","./generateCategoricalChart-4bT6INz8.js","./History-DJiP-DpJ.js","./trash-2-D_GdBA_D.js","./calendar-CGaKIHQy.js","./Gamification-DtllQUJI.js","./Consult-qp_D_eZx.js","./Privacy-CpZehHZ0.js"])))=>i.map(i=>d[i]);
 var __typeError = (msg) => {
   throw TypeError(msg);
 };
@@ -31271,58 +31271,33 @@ function Layout() {
       children: [
         !showShell && /* @__PURE__ */ jsxRuntimeExports.jsx(FloatingParticles, {}),
         showShell && /* @__PURE__ */ jsxRuntimeExports.jsx(Sidebar, {}),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: showShell ? "relative z-10 md:ml-72" : "relative z-10", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx(AnimatePresence, { mode: "wait", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
-            motion.main,
-            {
-              initial: { opacity: 0, y: 12 },
-              animate: { opacity: 1, y: 0 },
-              exit: { opacity: 0, y: -8 },
-              transition: { duration: 0.25, ease: "easeOut" },
-              className: showShell ? "pb-24 md:pb-8" : "",
-              children: /* @__PURE__ */ jsxRuntimeExports.jsx(Outlet, {})
-            },
-            location.pathname
-          ) }),
-          !isPublicPage && /* @__PURE__ */ jsxRuntimeExports.jsx(
-            "footer",
-            {
-              className: "hidden px-8 py-4 md:block",
-              style: showShell ? { borderTop: "1px solid #d7cabb", backgroundColor: "#F2EAE0" } : void 0,
-              children: /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-center text-xs text-muted-foreground", children: [
-                "© ",
-                (/* @__PURE__ */ new Date()).getFullYear(),
-                ". Built with love using",
-                " ",
-                /* @__PURE__ */ jsxRuntimeExports.jsx(
-                  "a",
-                  {
-                    href: `https://caffeine.ai?utm_source=caffeine-footer&utm_medium=referral&utm_content=${encodeURIComponent(typeof window !== "undefined" ? window.location.hostname : "")}`,
-                    target: "_blank",
-                    rel: "noopener noreferrer",
-                    className: "text-primary hover:underline",
-                    children: "caffeine.ai"
-                  }
-                )
-              ] })
-            }
-          )
-        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: showShell ? "relative z-10 md:ml-72" : "relative z-10", children: /* @__PURE__ */ jsxRuntimeExports.jsx(AnimatePresence, { mode: "wait", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+          motion.main,
+          {
+            initial: { opacity: 0, y: 12 },
+            animate: { opacity: 1, y: 0 },
+            exit: { opacity: 0, y: -8 },
+            transition: { duration: 0.25, ease: "easeOut" },
+            className: showShell ? "pb-24 md:pb-8" : "",
+            children: /* @__PURE__ */ jsxRuntimeExports.jsx(Outlet, {})
+          },
+          location.pathname
+        ) }) }),
         showShell && /* @__PURE__ */ jsxRuntimeExports.jsx(BottomNav, {})
       ]
     }
   );
 }
-const AuthPage = reactExports.lazy(() => __vitePreload(() => import("./AuthPage-BxlR3pa-.js"), true ? [] : void 0, import.meta.url));
-const DashboardHome = reactExports.lazy(() => __vitePreload(() => import("./DashboardHome-CQrdFssW.js"), true ? [] : void 0, import.meta.url));
-const ScreeningHub = reactExports.lazy(() => __vitePreload(() => import("./ScreeningHub-Drz36Y4y.js"), true ? __vite__mapDeps([0,1]) : void 0, import.meta.url));
-const Camera = reactExports.lazy(() => __vitePreload(() => import("./Camera-DZ7fNPZ6.js"), true ? __vite__mapDeps([2,1,3,4,5]) : void 0, import.meta.url));
-const Form = reactExports.lazy(() => __vitePreload(() => import("./Form-BebQdRu7.js"), true ? __vite__mapDeps([6,1]) : void 0, import.meta.url));
-const Results = reactExports.lazy(() => __vitePreload(() => import("./Results-DWImpGCX.js"), true ? __vite__mapDeps([7,1,8]) : void 0, import.meta.url));
-const History = reactExports.lazy(() => __vitePreload(() => import("./History-BL-25vr2.js"), true ? __vite__mapDeps([9,1,10,11,8,5]) : void 0, import.meta.url));
-const Gamification = reactExports.lazy(() => __vitePreload(() => import("./Gamification-CscuiuFj.js"), true ? __vite__mapDeps([12,1,11,4]) : void 0, import.meta.url));
-const Consult = reactExports.lazy(() => __vitePreload(() => import("./Consult-DxotT0TX.js"), true ? __vite__mapDeps([13,1]) : void 0, import.meta.url));
-const Privacy = reactExports.lazy(() => __vitePreload(() => import("./Privacy-DXzM9_m7.js"), true ? __vite__mapDeps([14,1,10,4,3]) : void 0, import.meta.url));
+const AuthPage = reactExports.lazy(() => __vitePreload(() => import("./AuthPage-DReRqc_X.js"), true ? [] : void 0, import.meta.url));
+const DashboardHome = reactExports.lazy(() => __vitePreload(() => import("./DashboardHome-DPZ8mCId.js"), true ? [] : void 0, import.meta.url));
+const ScreeningHub = reactExports.lazy(() => __vitePreload(() => import("./ScreeningHub-DlCp9q23.js"), true ? __vite__mapDeps([0,1]) : void 0, import.meta.url));
+const Camera = reactExports.lazy(() => __vitePreload(() => import("./Camera-D74HzZ8l.js"), true ? __vite__mapDeps([2,1,3,4,5]) : void 0, import.meta.url));
+const Form = reactExports.lazy(() => __vitePreload(() => import("./Form-k7GN7OEt.js"), true ? __vite__mapDeps([6,1]) : void 0, import.meta.url));
+const Results = reactExports.lazy(() => __vitePreload(() => import("./Results-CSqaxXSY.js"), true ? __vite__mapDeps([7,1,8]) : void 0, import.meta.url));
+const History = reactExports.lazy(() => __vitePreload(() => import("./History-DJiP-DpJ.js"), true ? __vite__mapDeps([9,1,10,11,8,5]) : void 0, import.meta.url));
+const Gamification = reactExports.lazy(() => __vitePreload(() => import("./Gamification-DtllQUJI.js"), true ? __vite__mapDeps([12,1,11,4]) : void 0, import.meta.url));
+const Consult = reactExports.lazy(() => __vitePreload(() => import("./Consult-qp_D_eZx.js"), true ? __vite__mapDeps([13,1]) : void 0, import.meta.url));
+const Privacy = reactExports.lazy(() => __vitePreload(() => import("./Privacy-CpZehHZ0.js"), true ? __vite__mapDeps([14,1,10,4,3]) : void 0, import.meta.url));
 const PageWrapper = ({ children }) => /* @__PURE__ */ jsxRuntimeExports.jsx(
   reactExports.Suspense,
   {
