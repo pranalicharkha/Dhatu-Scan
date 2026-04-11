@@ -31,6 +31,115 @@ const CONFETTI_DATA = Array.from({ length: 40 }, (_, i) => ({
   spin: i % 2 === 0 ? 360 : -360,
 }));
 
+const AVATAR_STAGES = {
+  1: {
+    shirt: "#f59e0b",
+    shirtShadow: "#b45309",
+    accent: "#fde68a",
+    scale: 0.92,
+  },
+  2: {
+    shirt: "#f97316",
+    shirtShadow: "#c2410c",
+    accent: "#fdba74",
+    scale: 0.96,
+  },
+  3: {
+    shirt: "#14b8a6",
+    shirtShadow: "#0f766e",
+    accent: "#99f6e4",
+    scale: 1,
+  },
+  4: {
+    shirt: "#06b6d4",
+    shirtShadow: "#0e7490",
+    accent: "#a5f3fc",
+    scale: 1.04,
+  },
+  5: {
+    shirt: "#22c55e",
+    shirtShadow: "#15803d",
+    accent: "#bbf7d0",
+    scale: 1.08,
+  },
+  6: {
+    shirt: "#3b82f6",
+    shirtShadow: "#1d4ed8",
+    accent: "#bfdbfe",
+    scale: 1.12,
+  },
+} as const;
+
+function StageAvatar({
+  level,
+  size = 64,
+}: {
+  level: number;
+  size?: number;
+}) {
+  const stage = AVATAR_STAGES[level as keyof typeof AVATAR_STAGES] ?? AVATAR_STAGES[1];
+  const ring = Math.max(2, Math.round(size * 0.035));
+
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 120 120"
+      role="img"
+      aria-label={`Avatar for ${LEVELS[level - 1]?.name ?? "progress stage"}`}
+    >
+      <defs>
+        <linearGradient id={`avatar-bg-${level}`} x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor={stage.accent} stopOpacity="0.95" />
+          <stop offset="100%" stopColor={stage.shirt} stopOpacity="0.9" />
+        </linearGradient>
+      </defs>
+      <circle cx="60" cy="60" r="58" fill={`url(#avatar-bg-${level})`} opacity="0.16" />
+      <circle
+        cx="60"
+        cy="60"
+        r={56 - ring / 2}
+        fill="none"
+        stroke={stage.accent}
+        strokeWidth={ring}
+        opacity="0.7"
+      />
+      <g transform={`translate(60 63) scale(${stage.scale}) translate(-60 -63)`}>
+        <ellipse cx="60" cy="98" rx="24" ry="8" fill="#0f172a" opacity="0.16" />
+        <path
+          d="M38 90C38 74 48 64 60 64C72 64 82 74 82 90V96H38V90Z"
+          fill={stage.shirt}
+        />
+        <path
+          d="M46 96C47 86 53 80 60 80C67 80 73 86 74 96H46Z"
+          fill={stage.shirtShadow}
+          opacity="0.22"
+        />
+        <rect x="54" y="54" width="12" height="16" rx="6" fill="#f2c5a0" />
+        <ellipse cx="60" cy="42" rx="24" ry="26" fill="#f4c9a6" />
+        <path
+          d="M36 42C36 26 46 18 60 18C74 18 84 26 84 42V46C81 39 76 34 68 31C59 27 50 29 42 36L36 42Z"
+          fill="#1f2937"
+        />
+        <circle cx="51" cy="44" r="2.8" fill="#1f2937" />
+        <circle cx="69" cy="44" r="2.8" fill="#1f2937" />
+        <path
+          d="M53 54C56 58 64 58 67 54"
+          fill="none"
+          stroke="#9a3412"
+          strokeLinecap="round"
+          strokeWidth="2.6"
+        />
+        <circle cx="86" cy="33" r="8" fill={stage.accent} opacity="0.9" />
+        <path
+          d="M86 27L87.8 31.6L92.8 32L88.9 35.2L90.1 40L86 37.2L81.9 40L83.1 35.2L79.2 32L84.2 31.6L86 27Z"
+          fill="#fff7ed"
+        />
+      </g>
+    </svg>
+  );
+}
+
 // ─── Confetti particle ──────────────────────────────────────────────────────
 function ConfettiParticle({ index }: { index: number }) {
   const d = CONFETTI_DATA[index];
@@ -71,7 +180,7 @@ function LevelNode({
     >
       <motion.div
         className={cn(
-          "relative flex items-center justify-center w-12 h-12 rounded-full text-xl border-2 transition-smooth",
+          "relative flex items-center justify-center w-12 h-12 rounded-full border-2 transition-smooth overflow-hidden",
           isActive
             ? "border-primary shadow-lg bg-primary/20"
             : isCompleted
@@ -81,7 +190,7 @@ function LevelNode({
         animate={isActive ? { scale: [1, 1.08, 1] } : {}}
         transition={{ duration: 2, repeat: Number.POSITIVE_INFINITY }}
       >
-        {levelInfo.icon}
+        <StageAvatar level={levelInfo.level} size={40} />
         {isActive && (
           <motion.div
             className="absolute inset-0 rounded-full border-2 border-primary"
@@ -366,11 +475,11 @@ export default function Gamification() {
             {/* Avatar */}
             <div className="relative">
               <motion.div
-                className="w-24 h-24 rounded-full gradient-teal glow-teal flex items-center justify-center text-4xl shadow-xl"
+                className="w-24 h-24 rounded-full gradient-teal glow-teal flex items-center justify-center shadow-xl overflow-hidden"
                 animate={{ scale: [1, 1.04, 1] }}
                 transition={{ duration: 3, repeat: Number.POSITIVE_INFINITY }}
               >
-                {currentLevel.icon}
+                <StageAvatar level={currentLevel.level} size={88} />
               </motion.div>
               {/* Level badge */}
               <div className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full gradient-health border-2 border-background flex items-center justify-center shadow-md">
@@ -385,8 +494,10 @@ export default function Gamification() {
               <h2 className="text-xl font-bold text-foreground">
                 {activeChild?.name ?? "Your Child"}
               </h2>
+              <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground mt-2">
+                Care Stage
+              </p>
               <div className="flex items-center justify-center gap-2 mt-1">
-                <span className="text-2xl">{currentLevel.icon}</span>
                 <span className="text-lg font-semibold text-gradient-teal">
                   {currentLevel.name}
                 </span>
@@ -443,7 +554,7 @@ export default function Gamification() {
         <GlassCard variant="default" animate delay={0.1} className="p-5">
           <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4 flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-primary" />
-            Level Journey
+            Recovery Journey
           </h3>
           <div className="relative flex items-start justify-between">
             {/* Track line */}
@@ -667,3 +778,4 @@ export default function Gamification() {
     </div>
   );
 }
+

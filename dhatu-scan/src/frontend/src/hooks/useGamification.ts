@@ -75,10 +75,6 @@ export function useGamification(): UseGamificationReturn {
     const isUnlocked = (id: string) =>
       badges.find((b) => b.id === id)?.unlocked;
 
-    if (checkups >= 1 && !isUnlocked("first_scan")) {
-      const b = unlockBadge("first_scan");
-      if (b) unlocked.push(b);
-    }
     if (checkups >= 3 && !isUnlocked("three_checkups")) {
       const b = unlockBadge("three_checkups");
       if (b) unlocked.push(b);
@@ -87,13 +83,9 @@ export function useGamification(): UseGamificationReturn {
       const b = unlockBadge("six_months");
       if (b) unlocked.push(b);
     }
-    if (state.children.length >= 2 && !isUnlocked("multi_child")) {
-      const b = unlockBadge("multi_child");
-      if (b) unlocked.push(b);
-    }
 
     return unlocked;
-  }, [gamification, state.children.length, unlockBadge]);
+  }, [gamification, unlockBadge]);
 
   const getLevelInfo = useCallback(
     () => getLevel(gamification.xp),

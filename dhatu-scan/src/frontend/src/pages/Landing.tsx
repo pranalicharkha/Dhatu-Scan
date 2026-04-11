@@ -153,7 +153,7 @@ const FEATURES = [
   {
     icon: "🎮",
     title: "Kid Gamification",
-    desc: "Fun rewards system with XP, badges, and level progression — from Healthy Seed to Strong Tree.",
+    desc: "A supportive rewards system with XP, badges, and human avatar milestones - from Starting Point to Thriving.",
     glow: "green" as const,
   },
 ];
@@ -916,3 +916,5 @@ export default function Landing() {
     </div>
   );
 }
+
+

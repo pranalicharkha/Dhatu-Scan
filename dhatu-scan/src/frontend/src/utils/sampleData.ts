@@ -126,7 +126,7 @@ export const SAMPLE_BADGES: Badge[] = ALL_BADGES.map((b, i) => ({
 export const SAMPLE_GAMIFICATION: GamificationState = {
   xp: 620,
   level: 3,
-  levelName: "Healthy Sprout",
+  levelName: "Balanced",
   badges: SAMPLE_BADGES,
   checkups: 12,
   streak: 6,

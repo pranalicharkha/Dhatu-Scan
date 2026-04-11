@@ -45,7 +45,7 @@ type AppAction =
 const defaultGamification: GamificationState = {
   xp: 0,
   level: 1,
-  levelName: "Healthy Seed",
+  levelName: "Starting Point",
   badges: [],
   checkups: 0,
   streak: 0,
@@ -146,7 +146,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
         const childProfiles = await getChildren();
         const allAssessments = await getAssessments();
-        const gamification = await getGamification();
+        const storedGamification = await getGamification();
+        const gamification = storedGamification
+          ? {
+              ...storedGamification,
+              level: getLevel(storedGamification.xp).level,
+              levelName: getLevel(storedGamification.xp).name,
+            }
+          : defaultGamification;
         const auth = isAuthenticated();
 
         if (cancelled) return;
@@ -157,7 +164,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             children: childProfiles,
             assessments: allAssessments,
             activeChildId: childProfiles[0]?.id ?? null,
-            gamification: gamification ?? defaultGamification,
+            gamification,
             isAuthenticated: auth,
             isLoading: false,
           },
