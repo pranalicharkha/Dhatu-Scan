@@ -12,6 +12,8 @@ import LoadingSpinner from "../components/LoadingSpinner";
 import { useApp } from "../context/AppContext";
 
 const AuthPage = lazy(() => import("../pages/AuthPage"));
+const LoginPage = lazy(() => import("../pages/LoginPage"));
+const RegisterPage = lazy(() => import("../pages/RegisterPage"));
 const DashboardHome = lazy(() => import("../pages/DashboardHome"));
 const ScreeningHub = lazy(() => import("../pages/ScreeningHub"));
 const Camera = lazy(() => import("../pages/Camera"));
@@ -67,6 +69,26 @@ const dashboardRoute = createRoute({
         <DashboardHome />
       </PageWrapper>
     </ProtectedPage>
+  ),
+});
+
+const loginRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/login",
+  component: () => (
+    <PageWrapper>
+      <LoginPage />
+    </PageWrapper>
+  ),
+});
+
+const registerRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/register",
+  component: () => (
+    <PageWrapper>
+      <RegisterPage />
+    </PageWrapper>
   ),
 });
 
@@ -168,6 +190,8 @@ const privacyRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   authRoute,
+  loginRoute,
+  registerRoute,
   dashboardRoute,
   screeningRoute,
   cameraRoute,

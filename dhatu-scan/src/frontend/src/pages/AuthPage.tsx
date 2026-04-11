@@ -1,31 +1,56 @@
 import { useApp } from "@/context/AppContext";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, Navigate } from "@tanstack/react-router";
 import { motion } from "motion/react";
 
 const STEPS = [
   {
-    title: "1. Screening",
-    desc: "Capture body measurements and first visual screening for early malnutrition risk.",
+    number: "01",
+    title: "Screening",
+    desc: "Capture body measurements and complete the first visual screening for early malnutrition risk.",
     bg: "#f4ebdf",
     text: "#4f4567",
   },
   {
-    title: "2. Data Adding",
+    number: "02",
+    title: "Data Adding",
     desc: "Add child age, diet, weight, height, and health details for a stronger assessment.",
     bg: "#b5d1da",
     text: "#314552",
   },
   {
-    title: "3. ML Detect",
+    number: "03",
+    title: "ML Detect",
     desc: "The model analyzes the screening inputs to detect possible undernutrition patterns.",
     bg: "#b8a4cc",
     text: "#45385f",
   },
   {
-    title: "4. Results",
+    number: "04",
+    title: "Results",
     desc: "View the risk result, trends, and the next care action in one clear dashboard.",
     bg: "#9c8fcb",
     text: "#f8f3ed",
+  },
+];
+
+const INFO_CARDS = [
+  {
+    title: "What Is Malnutrition?",
+    desc: "Malnutrition happens when a child does not get the right balance of nutrition needed for growth, immunity, brain development, and daily energy.",
+    tone: "#f4ebdf",
+    text: "#4f4567",
+  },
+  {
+    title: "Effects On Children",
+    desc: "It can lead to stunting, weak immunity, poor learning ability, delayed development, and higher risk during illness if it is not detected early.",
+    tone: "#b5d1da",
+    text: "#314552",
+  },
+  {
+    title: "Benefits Of Early Detection",
+    desc: "Early screening helps families act sooner with food, care, and clinical support before malnutrition becomes severe or causes long-term damage.",
+    tone: "#b8a4cc",
+    text: "#45385f",
   },
 ];
 
@@ -41,23 +66,62 @@ const PALETTE = {
   buttonDark: "#52456d",
 };
 
-export default function AuthPage() {
-  const navigate = useNavigate();
-  const { signIn } = useApp();
+function SectionTitle({
+  eyebrow,
+  title,
+  description,
+}: {
+  eyebrow: string;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="mx-auto max-w-3xl text-center">
+      <p
+        className="text-xs font-semibold uppercase tracking-[0.22em]"
+        style={{ color: PALETTE.muted }}
+      >
+        {eyebrow}
+      </p>
+      <h2
+        className="mt-4 font-display text-3xl font-bold sm:text-4xl"
+        style={{ color: PALETTE.ink }}
+      >
+        {title}
+      </h2>
+      <p className="mt-4 text-base leading-7" style={{ color: "#4d4561" }}>
+        {description}
+      </p>
+    </div>
+  );
+}
 
-  const enterApp = async () => {
-    signIn();
-    await navigate({ to: "/dashboard" });
-  };
+export default function AuthPage() {
+  const { state } = useApp();
+
+  if (state.isAuthenticated) {
+    return <Navigate to="/dashboard" />;
+  }
 
   return (
     <div
-      className="min-h-screen"
+      className="min-h-screen overflow-hidden"
       style={{
         background:
-          "linear-gradient(180deg, #f4ebdf 0%, #f4ebdf 34%, #b5d1da 34%, #b5d1da 58%, #b8a4cc 58%, #b8a4cc 79%, #9c8fcb 79%, #9c8fcb 100%)",
+          "radial-gradient(circle at top left, rgba(181, 209, 218, 0.45) 0%, rgba(181, 209, 218, 0) 30%), radial-gradient(circle at top right, rgba(184, 164, 204, 0.32) 0%, rgba(184, 164, 204, 0) 34%), linear-gradient(180deg, #f4ebdf 0%, #efe3d4 48%, #f4ebdf 100%)",
       }}
     >
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-72 opacity-70">
+        <div
+          className="absolute left-[8%] top-12 h-36 w-36 rounded-full blur-3xl"
+          style={{ backgroundColor: "rgba(181, 209, 218, 0.55)" }}
+        />
+        <div
+          className="absolute right-[10%] top-20 h-40 w-40 rounded-full blur-3xl"
+          style={{ backgroundColor: "rgba(184, 164, 204, 0.4)" }}
+        />
+      </div>
+
       <header className="px-4 py-6 sm:px-6 lg:px-10">
         <div className="mx-auto flex max-w-7xl items-center justify-between">
           <Link to="/" className="flex items-center gap-3">
@@ -81,9 +145,8 @@ export default function AuthPage() {
           </Link>
 
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={enterApp}
+            <Link
+              to="/login"
               className="rounded-full px-5 py-2 text-sm font-semibold transition-smooth"
               style={{
                 backgroundColor: PALETTE.white,
@@ -92,174 +155,212 @@ export default function AuthPage() {
               }}
             >
               Login
-            </button>
-            <button
-              type="button"
-              onClick={enterApp}
+            </Link>
+            <Link
+              to="/register"
               className="rounded-full px-5 py-2 text-sm font-semibold transition-smooth"
               style={{
                 backgroundColor: PALETTE.buttonDark,
                 color: PALETTE.white,
               }}
             >
-              Sign Up
-            </button>
+              Register
+            </Link>
           </div>
         </div>
       </header>
 
-      <main className="px-4 pb-12 pt-4 sm:px-6 lg:px-10">
-        <div className="mx-auto grid max-w-7xl items-start gap-10 lg:grid-cols-[1.1fr_0.9fr]">
-          <section className="pt-4 lg:pt-10">
-            <motion.span
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="inline-flex rounded-full px-4 py-1 text-xs font-semibold uppercase tracking-[0.22em]"
-              style={{
-                backgroundColor: PALETTE.white,
-                color: PALETTE.ink,
-                border: `1px solid ${PALETTE.lavender}`,
-              }}
-            >
-              Child Nutrition Screening Platform
-            </motion.span>
+      <main className="px-4 pb-20 pt-4 sm:px-6 lg:px-10">
+        <div className="mx-auto max-w-7xl">
+          <section className="grid items-center gap-10 py-8 lg:grid-cols-[1.05fr_0.95fr] lg:py-14">
+            <div className="max-w-2xl">
+              <motion.span
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="inline-flex rounded-full px-4 py-1 text-xs font-semibold uppercase tracking-[0.22em]"
+                style={{
+                  backgroundColor: PALETTE.white,
+                  color: PALETTE.ink,
+                  border: `1px solid ${PALETTE.lavender}`,
+                }}
+              >
+                Child Nutrition Screening Platform
+              </motion.span>
 
-            <motion.h1
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.08 }}
-              className="mt-6 max-w-4xl font-display text-5xl font-bold leading-[0.95] sm:text-6xl lg:text-7xl"
-              style={{ color: PALETTE.ink }}
-            >
-              Detect malnutrition early,
-              <span className="block" style={{ color: "#5f5282" }}>
-                guide families faster,
-              </span>
-              <span className="block" style={{ color: "#ffffff" }}>
-                and act with confidence.
-              </span>
-            </motion.h1>
+              <motion.h1
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.08 }}
+                className="mt-6 font-display text-5xl font-bold leading-[0.95] sm:text-6xl lg:text-7xl"
+                style={{ color: PALETTE.ink }}
+              >
+                Detect malnutrition early,
+                <span className="block" style={{ color: "#5f5282" }}>
+                  support families sooner,
+                </span>
+                <span className="block" style={{ color: "#7e719f" }}>
+                  and protect childhood growth.
+                </span>
+              </motion.h1>
 
-            <motion.p
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.14 }}
-              className="mt-6 max-w-2xl text-lg leading-8"
-              style={{ color: "#4d4561" }}
-            >
-              Dhatu-Scan supports caregivers and health workers with a clear
-              workflow for screening, data entry, ML-based risk detection, and
-              easy-to-read results for child nutrition care.
-            </motion.p>
+              <motion.p
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.14 }}
+                className="mt-6 max-w-xl text-lg leading-8"
+                style={{ color: "#4d4561" }}
+              >
+                Dhatu-Scan supports caregivers and health workers with a clear
+                workflow for screening, data entry, risk detection, and early
+                action for child nutrition care.
+              </motion.p>
 
-            <div className="mt-10 grid max-w-3xl gap-4 sm:grid-cols-2">
-              {STEPS.map((step, index) => (
-                <motion.div
-                  key={step.title}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.2 + index * 0.06 }}
-                  className="rounded-[1.75rem] p-5 shadow-sm"
-                  style={{ backgroundColor: step.bg, color: step.text }}
-                >
-                  <p className="font-display text-xl font-semibold">{step.title}</p>
-                  <p className="mt-2 text-sm leading-6">{step.desc}</p>
-                </motion.div>
-              ))}
-            </div>
-          </section>
-
-          <motion.section
-            initial={{ opacity: 0, scale: 0.97 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.16 }}
-            className="lg:pt-6"
-          >
-            <div
-              className="rounded-[2rem] p-8 shadow-xl"
-              style={{ backgroundColor: PALETTE.panel, color: PALETTE.ink }}
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <p
-                    className="text-sm uppercase tracking-[0.22em]"
-                    style={{ color: PALETTE.muted }}
-                  >
-                    Welcome Back
-                  </p>
-                  <h2 className="mt-2 font-display text-3xl font-semibold">
-                    Sign in to continue care tracking
-                  </h2>
-                </div>
-                <div
-                  className="flex h-14 w-14 items-center justify-center rounded-2xl text-xl font-bold"
-                  style={{ backgroundColor: PALETTE.blue, color: PALETTE.ink }}
-                >
-                  +
-                </div>
-              </div>
-
-              <div className="mt-8 space-y-4">
-                <div>
-                  <label
-                    className="mb-2 block text-sm font-medium"
-                    style={{ color: PALETTE.muted }}
-                  >
-                    Email
-                  </label>
-                  <input
-                    type="email"
-                    defaultValue="caregiver@dhatuscan.app"
-                    className="w-full rounded-2xl px-4 py-3 text-sm outline-none"
-                    style={{
-                      backgroundColor: PALETTE.white,
-                      color: PALETTE.ink,
-                      border: `1px solid ${PALETTE.lavender}`,
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <label
-                    className="mb-2 block text-sm font-medium"
-                    style={{ color: PALETTE.muted }}
-                  >
-                    Password
-                  </label>
-                  <input
-                    type="password"
-                    defaultValue="password"
-                    className="w-full rounded-2xl px-4 py-3 text-sm outline-none"
-                    style={{
-                      backgroundColor: PALETTE.white,
-                      color: PALETTE.ink,
-                      border: `1px solid ${PALETTE.lavender}`,
-                    }}
-                  />
-                </div>
-
-                <button
-                  type="button"
-                  onClick={enterApp}
-                  className="w-full rounded-2xl px-5 py-3 font-semibold transition-smooth"
+              <div className="mt-10 flex flex-wrap items-center gap-4">
+                <Link
+                  to="/login"
+                  className="rounded-full px-6 py-3 text-sm font-semibold transition-smooth"
                   style={{
                     backgroundColor: PALETTE.buttonDark,
                     color: PALETTE.white,
                   }}
                 >
-                  Login / Sign In
-                </button>
-              </div>
-
-              <div
-                className="mt-6 rounded-2xl p-4 text-sm leading-6"
-                style={{ backgroundColor: PALETTE.blue, color: "#3d4b56" }}
-              >
-                Use this login to enter the dashboard, start screening, review
-                nutrition risk results, and guide the next care decision.
+                  Open Login Page
+                </Link>
+                <Link
+                  to="/register"
+                  className="rounded-full px-6 py-3 text-sm font-semibold transition-smooth"
+                  style={{
+                    backgroundColor: PALETTE.white,
+                    color: PALETTE.ink,
+                    border: `1px solid ${PALETTE.lavender}`,
+                  }}
+                >
+                  Open Registration Page
+                </Link>
               </div>
             </div>
-          </motion.section>
+
+            <motion.div
+              initial={{ opacity: 0, y: 20, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ delay: 0.18 }}
+              className="relative"
+            >
+              <div
+                className="overflow-hidden rounded-[2rem] border p-3 shadow-xl"
+                style={{
+                  backgroundColor: "rgba(255, 250, 245, 0.68)",
+                  borderColor: "rgba(156, 143, 203, 0.28)",
+                  boxShadow: "0 24px 80px rgba(82, 69, 109, 0.12)",
+                }}
+              >
+                <div className="relative overflow-hidden rounded-[1.5rem]">
+                  <img
+                    src="/assets/images/mother-child.jpeg"
+                    alt="Mother taking care of her child"
+                    className="h-[420px] w-full object-cover"
+                  />
+                  <div
+                    className="absolute inset-0"
+                    style={{
+                      background:
+                        "linear-gradient(180deg, rgba(244, 235, 223, 0.04) 0%, rgba(64, 53, 82, 0.28) 100%)",
+                    }}
+                  />
+                </div>
+
+                <div className="grid gap-3 p-4 sm:grid-cols-3">
+                  <div
+                    className="rounded-2xl px-4 py-3 text-sm"
+                    style={{ backgroundColor: PALETTE.page, color: PALETTE.ink }}
+                  >
+                    Private-first support
+                  </div>
+                  <div
+                    className="rounded-2xl px-4 py-3 text-sm"
+                    style={{ backgroundColor: PALETTE.blue, color: "#314552" }}
+                  >
+                    Early family guidance
+                  </div>
+                  <div
+                    className="rounded-2xl px-4 py-3 text-sm"
+                    style={{ backgroundColor: PALETTE.lavender, color: "#45385f" }}
+                  >
+                    Better screening flow
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </section>
+
+          <section className="py-12 lg:py-16">
+            <SectionTitle
+              eyebrow="Understanding The Risk"
+              title="What every caregiver should know about malnutrition"
+              description="These three questions explain why screening matters and why acting early can change outcomes for a child."
+            />
+
+            <div className="mt-10 grid gap-5 lg:grid-cols-3">
+              {INFO_CARDS.map((card, index) => (
+                <motion.article
+                  key={card.title}
+                  initial={{ opacity: 0, y: 18 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.12 + index * 0.08 }}
+                  className="flex min-h-[220px] flex-col rounded-[1.75rem] p-6 shadow-sm"
+                  style={{
+                    backgroundColor: card.tone,
+                    color: card.text,
+                  }}
+                >
+                  <p className="text-sm font-semibold uppercase tracking-[0.18em] opacity-70">
+                    Question {index + 1}
+                  </p>
+                  <h3 className="mt-4 font-display text-2xl font-semibold">
+                    {card.title}
+                  </h3>
+                  <p className="mt-4 text-sm leading-7">{card.desc}</p>
+                </motion.article>
+              ))}
+            </div>
+          </section>
+
+          <section className="py-12 lg:py-16">
+            <SectionTitle
+              eyebrow="How It Works"
+              title="A clean step-by-step process in one aligned flow"
+              description="From first screening to final result, each stage follows the next so caregivers can move through the process with clarity."
+            />
+
+            <div className="mt-10 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+              {STEPS.map((step, index) => (
+                <motion.article
+                  key={step.number}
+                  initial={{ opacity: 0, y: 18 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.16 + index * 0.08 }}
+                  className="flex h-full min-h-[240px] flex-col rounded-[1.85rem] p-6 shadow-sm"
+                  style={{ backgroundColor: step.bg, color: step.text }}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-sm font-semibold tracking-[0.24em] opacity-70">
+                      {step.number}
+                    </span>
+                    <div
+                      className="h-10 w-10 rounded-full"
+                      style={{
+                        backgroundColor: "rgba(255, 250, 245, 0.42)",
+                      }}
+                    />
+                  </div>
+                  <h3 className="mt-8 font-display text-2xl font-semibold">
+                    {step.title}
+                  </h3>
+                  <p className="mt-4 text-sm leading-7">{step.desc}</p>
+                </motion.article>
+              ))}
+            </div>
+          </section>
         </div>
       </main>
     </div>
