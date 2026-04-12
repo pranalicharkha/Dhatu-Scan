@@ -20,6 +20,78 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
+const WHO_STATUS_COPY: Record<WHOStatus, string> = {
+  normal: "Growth is within healthy WHO standards for age and size.",
+  underweight: "Weight-for-age is below the WHO standard and suggests underweight.",
+  severe_underweight:
+    "Weight-for-age is far below the WHO standard and suggests severe underweight.",
+  stunted: "Height-for-age is below the WHO standard and suggests stunting.",
+  severe_stunting:
+    "Height-for-age is far below the WHO standard and suggests severe stunting.",
+  wasted:
+    "Weight-for-height is below the WHO standard and suggests wasting.",
+  severe_wasting:
+    "Weight-for-height is far below the WHO standard and suggests severe wasting.",
+};
+
+function ScoreGauge({
+  value,
+  label,
+  colorHex,
+  delay = 0,
+}: {
+  value: number;
+  label: string;
+  colorHex: string;
+  delay?: number;
+}) {
+  const data = [{ value, fill: colorHex }];
+
+  return (
+    <motion.div
+      className="flex flex-col items-center gap-2"
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.6, delay }}
+    >
+      <div className="relative h-28 w-28">
+        <ResponsiveContainer width="100%" height="100%">
+          <RadialBarChart
+            cx="50%"
+            cy="50%"
+            innerRadius="65%"
+            outerRadius="100%"
+            startAngle={225}
+            endAngle={-45}
+            data={data}
+          >
+            <RadialBar
+              background={{ fill: "rgba(255,255,255,0.05)" }}
+              dataKey="value"
+              cornerRadius={6}
+              max={100}
+            />
+          </RadialBarChart>
+        </ResponsiveContainer>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span
+            className="font-display text-2xl font-bold leading-none"
+            style={{ color: colorHex }}
+          >
+            {Math.round(value)}
+          </span>
+          <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+            / 100
+          </span>
+        </div>
+      </div>
+      <span className="px-1 text-center text-xs leading-tight text-muted-foreground">
+        {label}
+      </span>
+    </motion.div>
+  );
+}
+
 // ─── Recommendation Data ─────────────────────────────────────────────────────
 
 interface Recommendation {
@@ -161,67 +233,6 @@ const IMPROVEMENT_TIPS = [
   },
 ];
 
-// ─── Score Gauge Component ────────────────────────────────────────────────────
-
-function ScoreGauge({
-  value,
-  label,
-  colorHex,
-  delay = 0,
-}: {
-  value: number;
-  label: string;
-  colorHex: string;
-  delay?: number;
-}) {
-  const data = [{ value, fill: colorHex }];
-
-  return (
-    <motion.div
-      className="flex flex-col items-center gap-2"
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.6, delay }}
-    >
-      <div className="relative w-28 h-28">
-        <ResponsiveContainer width="100%" height="100%">
-          <RadialBarChart
-            cx="50%"
-            cy="50%"
-            innerRadius="65%"
-            outerRadius="100%"
-            startAngle={225}
-            endAngle={-45}
-            data={data}
-          >
-            <RadialBar
-              background={{ fill: "rgba(255,255,255,0.05)" }}
-              dataKey="value"
-              cornerRadius={6}
-              max={100}
-            />
-          </RadialBarChart>
-        </ResponsiveContainer>
-        {/* Center text */}
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span
-            className="text-2xl font-bold font-display leading-none"
-            style={{ color: colorHex }}
-          >
-            {Math.round(value)}
-          </span>
-          <span className="text-[10px] text-muted-foreground uppercase tracking-wide">
-            / 100
-          </span>
-        </div>
-      </div>
-      <span className="text-xs text-muted-foreground text-center leading-tight px-1">
-        {label}
-      </span>
-    </motion.div>
-  );
-}
-
 // ─── WHO Z-Score Bar ──────────────────────────────────────────────────────────
 
 function WHOZScoreBar({
@@ -272,6 +283,53 @@ function WHOZScoreBar({
         <span>+2</span>
         <span>+3 (Healthy)</span>
       </div>
+    </div>
+  );
+}
+
+function WHOIndicatorCard({
+  label,
+  title,
+  subtitle,
+  value,
+  status,
+}: {
+  label: string;
+  title: string;
+  subtitle: string;
+  value: number;
+  status: WHOStatus;
+}) {
+  const color = getWHOStatusColor(status);
+
+  return (
+    <div className="rounded-2xl border border-border/50 bg-background/40 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+              {label}
+            </span>
+            <span className="text-[10px] text-muted-foreground/80">
+              {subtitle}
+            </span>
+          </div>
+          <h3 className="mt-1 text-sm font-semibold text-foreground">{title}</h3>
+        </div>
+        <span
+          className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+          style={{ color, background: `${color}14` }}
+        >
+          {value > 0 ? "+" : ""}
+          {value.toFixed(2)}
+        </span>
+      </div>
+      <div className="mt-3 text-sm font-medium capitalize" style={{ color }}>
+        {status.replace(/_/g, " ")}
+      </div>
+      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+        {WHO_STATUS_COPY[status]}
+      </p>
     </div>
   );
 }
@@ -611,7 +669,6 @@ export default function Results() {
     day: "numeric",
   });
 
-  // Gauge colors
   const wastingColor =
     a.wastingScore <= 30
       ? "#10b981"
@@ -638,6 +695,16 @@ export default function Results() {
       riskLevel: riskCategory.label,
       whoZScore: a.whoZScore,
       whoStatus: a.whoStatus,
+      whoIndicators: {
+        waz: a.waz ?? a.whoZScore,
+        haz: a.haz ?? a.whoZScore,
+        whz: a.whz ?? a.whoZScore,
+        baz:
+          a.baz ?? Number((a.weight / (a.height / 100) ** 2).toFixed(2)),
+        underweightStatus: a.underweightStatus ?? a.whoStatus,
+        stuntingStatus: a.stuntingStatus ?? a.whoStatus,
+        wastingStatus: a.wastingStatus ?? a.whoStatus,
+      },
       recommendations: recommendations.map((r) => r.title),
     };
     const blob = new Blob([JSON.stringify(report, null, 2)], {
@@ -708,7 +775,12 @@ export default function Results() {
         </motion.div>
 
         {/* ── Score Gauges ── */}
-        <GlassCard animate variant="elevated" className="p-6">
+        <GlassCard
+          animate
+          variant="elevated"
+          className="hidden p-6"
+          aria-hidden="true"
+        >
           <h2 className="font-display font-semibold text-foreground text-sm uppercase tracking-wide mb-5 text-center">
             Score Breakdown
           </h2>
@@ -745,11 +817,14 @@ export default function Results() {
         {/* ── WHO Z-Score Card ── */}
         <GlassCard animate delay={0.15} variant="elevated" className="p-6">
           <div className="flex items-start gap-4" data-ocid="who-zscore-card">
-            <WHOPie zScore={assessment.whoZScore} color={whoColor} />
+            <WHOPie
+              zScore={assessment.haz ?? assessment.whoZScore}
+              color={whoColor}
+            />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap mb-1">
                 <h2 className="font-display font-semibold text-foreground">
-                  WHO Z-Score
+                  WHO Growth Assessment
                 </h2>
                 <Badge
                   variant="outline"
@@ -760,7 +835,9 @@ export default function Results() {
                     background: `${whoColor}15`,
                   }}
                 >
-                  {assessment.whoStatus.replace("_", " ").toUpperCase()}
+                  {(assessment.stuntingStatus ?? assessment.whoStatus)
+                    .replace(/_/g, " ")
+                    .toUpperCase()}
                 </Badge>
               </div>
               <p className="text-xs text-muted-foreground leading-relaxed mb-4">
@@ -778,9 +855,54 @@ export default function Results() {
                   }[assessment.whoStatus]
                 }
               </p>
+              <div className="mb-4 rounded-2xl border border-border/50 bg-background/30 px-4 py-3">
+                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  How To Read This
+                </div>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  Underweight uses WAZ, stunting uses HAZ, wasting uses WHZ, and
+                  BMI growth analysis uses BAZ. Scores below -2 are concerning
+                  and scores below -3 indicate severe risk.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                <WHOIndicatorCard
+                  label="WAZ"
+                  title="Underweight"
+                  subtitle="Weight-for-age"
+                  value={assessment.waz ?? assessment.whoZScore}
+                  status={assessment.underweightStatus ?? assessment.whoStatus}
+                />
+                <WHOIndicatorCard
+                  label="HAZ"
+                  title="Stunting"
+                  subtitle="Height-for-age"
+                  value={assessment.haz ?? assessment.whoZScore}
+                  status={assessment.stuntingStatus ?? assessment.whoStatus}
+                />
+                <WHOIndicatorCard
+                  label="WHZ"
+                  title="Wasting"
+                  subtitle="Weight-for-height"
+                  value={assessment.whz ?? assessment.whoZScore}
+                  status={assessment.wastingStatus ?? assessment.whoStatus}
+                />
+                <WHOIndicatorCard
+                  label="BAZ"
+                  title="BMI-for-age"
+                  subtitle="Growth analysis"
+                  value={
+                    assessment.baz ??
+                    Number(
+                      (assessment.weight / (assessment.height / 100) ** 2).toFixed(2),
+                    )
+                  }
+                  status={assessment.wastingStatus ?? assessment.whoStatus}
+                />
+              </div>
               <WHOZScoreBar
-                zScore={assessment.whoZScore}
-                status={assessment.whoStatus}
+                zScore={assessment.haz ?? assessment.whoZScore}
+                status={assessment.stuntingStatus ?? assessment.whoStatus}
               />
             </div>
           </div>

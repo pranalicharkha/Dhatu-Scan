@@ -229,6 +229,13 @@ export default function Form() {
       let riskLevel: Assessment["riskLevel"] = "moderate";
       let whoZScore = 0;
       let whoStatus: Assessment["whoStatus"] = "normal";
+      let waz: Assessment["waz"];
+      let haz: Assessment["haz"];
+      let whz: Assessment["whz"];
+      let baz: Assessment["baz"];
+      let underweightStatus: Assessment["underweightStatus"];
+      let stuntingStatus: Assessment["stuntingStatus"];
+      let wastingStatus: Assessment["wastingStatus"];
       let usedBackend = false;
 
       if (isBackendConfigured()) {
@@ -279,6 +286,13 @@ export default function Form() {
         const whoResult = calculateWHOZScore(h, w, ageMonths, form.gender);
         whoZScore = whoResult.zScore;
         whoStatus = whoResult.status;
+        waz = whoResult.waz;
+        haz = whoResult.haz;
+        whz = whoResult.whz;
+        baz = whoResult.baz;
+        underweightStatus = whoResult.underweightStatus;
+        stuntingStatus = whoResult.stuntingStatus;
+        wastingStatus = whoResult.wastingStatus;
       }
 
       const assessment: Assessment = {
@@ -294,6 +308,13 @@ export default function Form() {
         riskLevel,
         whoZScore,
         whoStatus,
+        waz,
+        haz,
+        whz,
+        baz,
+        underweightStatus,
+        stuntingStatus,
+        wastingStatus,
         dietDiversity: form.dietDiversity,
         waterSource: waterScore,
         recentDiarrhea: diarrheaScore,

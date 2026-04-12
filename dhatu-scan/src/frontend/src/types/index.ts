@@ -4,7 +4,9 @@ export type Gender = "male" | "female" | "other";
 export type WHOStatus =
   | "normal"
   | "underweight"
+  | "severe_underweight"
   | "stunted"
+  | "severe_stunting"
   | "wasted"
   | "severe_wasting";
 export type RiskLevel = "low" | "moderate" | "high";
@@ -48,6 +50,13 @@ export interface Assessment {
   // WHO data
   whoZScore: number;
   whoStatus: WHOStatus;
+  waz?: number;
+  haz?: number;
+  whz?: number;
+  baz?: number;
+  underweightStatus?: WHOStatus;
+  stuntingStatus?: WHOStatus;
+  wastingStatus?: WHOStatus;
   // Dietary inputs
   dietDiversity: number;
   waterSource: number;
@@ -102,6 +111,13 @@ export interface WHOZScoreResult {
   status: WHOStatus;
   label: string;
   description: string;
+  waz: number;
+  haz: number;
+  whz: number;
+  baz: number;
+  underweightStatus: WHOStatus;
+  stuntingStatus: WHOStatus;
+  wastingStatus: WHOStatus;
 }
 
 export interface AssessmentFormData {
