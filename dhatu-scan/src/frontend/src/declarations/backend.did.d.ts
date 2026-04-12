@@ -10,7 +10,109 @@ import type { ActorMethod } from '@icp-sdk/core/agent';
 import type { IDL } from '@icp-sdk/core/candid';
 import type { Principal } from '@icp-sdk/core/principal';
 
-export interface _SERVICE {}
+export type CaptureMode = { live: null } | { upload: null };
+export type Gender = { male: null } | { female: null } | { other: null };
+export type RiskLevel = { low: null } | { moderate: null } | { high: null };
+export type TipSeverity = { info: null } | { warning: null } | { critical: null };
+export type WHOStatus =
+  | { normal: null }
+  | { underweight: null }
+  | { stunted: null }
+  | { wasted: null }
+  | { severe_wasting: null };
+export type WaterSourceType =
+  | { piped: null }
+  | { borehole: null }
+  | { surface: null }
+  | { unprotected: null };
+export interface StoredImage {
+  bytes: Uint8Array | number[];
+  contentType: string;
+}
+export interface LandmarkVisibility {
+  bodyDetected: bigint;
+  faceDetected: bigint;
+  bodyRequired: bigint;
+  faceRequired: bigint;
+  fullBodyVisible: boolean;
+  adequateLighting: boolean;
+  centered: boolean;
+  distanceOk: boolean;
+  headVisible: boolean;
+  feetVisible: boolean;
+}
+export interface GuidanceTip {
+  message: string;
+  severity: TipSeverity;
+}
+export interface GuidanceResponse {
+  readinessScore: bigint;
+  canCapture: boolean;
+  tips: GuidanceTip[];
+}
+export interface AnthropometryInput {
+  ageMonths: bigint;
+  gender: Gender;
+  heightCm: number;
+  weightKg: number;
+}
+export interface DietaryInput {
+  dietDiversity: bigint;
+  waterSource: WaterSourceType;
+  recentDiarrhea: boolean;
+  diarrheaFrequency: [] | [bigint];
+  breastfed: [] | [boolean];
+  mealsPerDay: [] | [bigint];
+}
+export interface CaptureMeta {
+  mode: CaptureMode;
+  bodyLandmarksDetected: bigint;
+  faceLandmarksDetected: bigint;
+  faceMasked: boolean;
+  modelName: string;
+  modelConfidence: number;
+  embeddingRiskHint: [] | [number];
+}
+export interface ScoreBreakdown {
+  whoZScore: number;
+  whoStatus: WHOStatus;
+  wastingScore: number;
+  dietaryScore: number;
+  fusionScore: number;
+  riskLevel: RiskLevel;
+}
+export interface Report {
+  id: string;
+  childId: string;
+  childName: string;
+  createdAt: bigint;
+  capture: CaptureMeta;
+  scores: ScoreBreakdown;
+  summary: string;
+  recommendations: string[];
+  maskedImage: [] | [StoredImage];
+}
+export interface AssessmentRequest {
+  childId: string;
+  childName: string;
+  anthropometry: AnthropometryInput;
+  dietary: DietaryInput;
+  capture: CaptureMeta;
+  originalImage: [] | [StoredImage];
+  maskedImage: [] | [StoredImage];
+}
+export interface AssessmentResponse {
+  report: Report;
+  privacyNote: string;
+}
+export interface _SERVICE {
+  healthCheck: ActorMethod<[], string>;
+  evaluateGuidance: ActorMethod<[LandmarkVisibility], GuidanceResponse>;
+  generateAssessmentReport: ActorMethod<[AssessmentRequest], AssessmentResponse>;
+  getReport: ActorMethod<[string], [] | [Report]>;
+  listReports: ActorMethod<[[] | [string]], Report[]>;
+  deleteReport: ActorMethod<[string], boolean>;
+}
 export declare const idlService: IDL.ServiceClass;
 export declare const idlInitArgs: IDL.Type[];
 export declare const idlFactory: IDL.InterfaceFactory;

@@ -1,0 +1,398 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from threading import Lock
+from typing import Literal
+from uuid import uuid4
+
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+
+
+Gender = Literal["male", "female", "other"]
+WaterSourceType = Literal["piped", "borehole", "surface", "unprotected"]
+CaptureMode = Literal["live", "upload"]
+WHOStatus = Literal["normal", "underweight", "stunted", "wasted", "severe_wasting"]
+RiskLevel = Literal["low", "moderate", "high"]
+TipSeverity = Literal["info", "warning", "critical"]
+
+
+class StoredImage(BaseModel):
+    contentType: str
+    bytes: list[int]
+
+
+class LandmarkVisibility(BaseModel):
+    bodyDetected: int
+    faceDetected: int
+    bodyRequired: int = 33
+    faceRequired: int = 468
+    fullBodyVisible: bool
+    adequateLighting: bool
+    centered: bool
+    distanceOk: bool
+    headVisible: bool
+    feetVisible: bool
+
+
+class GuidanceTip(BaseModel):
+    message: str
+    severity: TipSeverity
+
+
+class GuidanceResponse(BaseModel):
+    readinessScore: int
+    canCapture: bool
+    tips: list[GuidanceTip]
+
+
+class AnthropometryInput(BaseModel):
+    ageMonths: int
+    gender: Gender
+    heightCm: float
+    weightKg: float
+
+
+class DietaryInput(BaseModel):
+    dietDiversity: int = Field(ge=0, le=10)
+    waterSource: WaterSourceType
+    recentDiarrhea: bool
+    diarrheaFrequency: int | None = None
+    breastfed: bool | None = None
+    mealsPerDay: int | None = None
+
+
+class CaptureMeta(BaseModel):
+    mode: CaptureMode
+    bodyLandmarksDetected: int
+    faceLandmarksDetected: int
+    faceMasked: bool
+    modelName: str
+    modelConfidence: float
+    embeddingRiskHint: float | None = None
+
+
+class AssessmentRequest(BaseModel):
+    childId: str
+    childName: str
+    anthropometry: AnthropometryInput
+    dietary: DietaryInput
+    capture: CaptureMeta
+    originalImage: StoredImage | None = None
+    maskedImage: StoredImage | None = None
+
+
+class ScoreBreakdown(BaseModel):
+    whoZScore: float
+    whoStatus: WHOStatus
+    wastingScore: float
+    dietaryScore: float
+    fusionScore: float
+    riskLevel: RiskLevel
+
+
+class Report(BaseModel):
+    id: str
+    childId: str
+    childName: str
+    createdAt: str
+    capture: CaptureMeta
+    scores: ScoreBreakdown
+    summary: str
+    recommendations: list[str]
+    maskedImage: StoredImage | None = None
+
+
+class AssessmentResponse(BaseModel):
+    report: Report
+    privacyNote: str
+
+
+@dataclass(frozen=True)
+class WHORef:
+    age: int
+    wfa_m: float
+    wfa_f: float
+    hfa_m: float
+    hfa_f: float
+    sd_w: float
+    sd_h: float
+
+
+WHO_REFS: list[WHORef] = [
+    WHORef(0, 3.3, 3.2, 49.9, 49.1, 0.39, 1.9),
+    WHORef(6, 7.9, 7.3, 67.6, 65.7, 0.78, 2.4),
+    WHORef(12, 9.6, 8.9, 75.7, 74.0, 0.94, 2.7),
+    WHORef(18, 10.9, 10.2, 82.3, 80.7, 1.06, 2.9),
+    WHORef(24, 12.2, 11.5, 87.8, 86.4, 1.18, 3.1),
+    WHORef(36, 14.3, 13.9, 96.1, 95.1, 1.40, 3.5),
+    WHORef(48, 16.3, 15.9, 103.3, 102.7, 1.6, 3.8),
+    WHORef(60, 18.3, 17.7, 110.0, 109.4, 1.8, 4.0),
+]
+
+
+def _round2(value: float) -> float:
+    return round(value, 2)
+
+
+def _clamp(value: float, lower: float, upper: float) -> float:
+    return max(lower, min(upper, value))
+
+
+def _to_iso_now() -> str:
+    return datetime.now(tz=timezone.utc).isoformat()
+
+
+def _who_ref(age_months: int, gender: Gender) -> tuple[float, float, float, float]:
+    refs = WHO_REFS
+    if age_months <= refs[0].age:
+        lower = refs[0]
+        upper = refs[0]
+    elif age_months >= refs[-1].age:
+        lower = refs[-1]
+        upper = refs[-1]
+    else:
+        lower = refs[0]
+        upper = refs[-1]
+        for idx in range(len(refs) - 1):
+            a, b = refs[idx], refs[idx + 1]
+            if a.age <= age_months <= b.age:
+                lower, upper = a, b
+                break
+
+    span = upper.age - lower.age
+    t = 0.0 if span == 0 else (age_months - lower.age) / span
+
+    low_w = lower.wfa_f if gender == "female" else lower.wfa_m
+    up_w = upper.wfa_f if gender == "female" else upper.wfa_m
+    low_h = lower.hfa_f if gender == "female" else lower.hfa_m
+    up_h = upper.hfa_f if gender == "female" else upper.hfa_m
+    wfa = low_w + t * (up_w - low_w)
+    hfa = low_h + t * (up_h - low_h)
+    sd_w = lower.sd_w + t * (upper.sd_w - lower.sd_w)
+    sd_h = lower.sd_h + t * (upper.sd_h - lower.sd_h)
+    return wfa, hfa, sd_w, sd_h
+
+
+def _who_zscore(a: AnthropometryInput) -> tuple[float, WHOStatus]:
+    wfa, hfa, sd_w, sd_h = _who_ref(a.ageMonths, a.gender)
+    waz = (a.weightKg - wfa) / (sd_w * 2.0)
+    haz = (a.heightCm - hfa) / (sd_h * 2.0)
+    whz = (a.weightKg - wfa * 0.85) / (sd_w * 1.5)
+    primary = min(waz, haz, whz)
+
+    if primary >= -1:
+        status: WHOStatus = "normal"
+    elif primary >= -2:
+        status = "underweight" if waz < -1 else "stunted"
+    elif primary >= -3:
+        status = "wasted" if whz < -2 else "stunted"
+    else:
+        status = "severe_wasting"
+    return _round2(primary), status
+
+
+def _wasting_score(a: AnthropometryInput) -> float:
+    if a.heightCm <= 0 or a.weightKg <= 0:
+        return 0.0
+    height_m = a.heightCm / 100.0
+    bmi = a.weightKg / (height_m * height_m)
+    expected_bmi = 17.5 if a.ageMonths < 24 else 16.5 if a.ageMonths < 60 else 15.5
+    bmi_dev = (expected_bmi - bmi) / expected_bmi
+    hw_ratio = (a.weightKg / a.heightCm) * 100.0
+    expected_hw = 11.0 if a.ageMonths < 12 else 13.0 if a.ageMonths < 36 else 15.0
+    hw_dev = (expected_hw - hw_ratio) / expected_hw
+    return _clamp((bmi_dev * 0.6 + hw_dev * 0.4) * 100.0, 0.0, 100.0)
+
+
+def _water_score(source: WaterSourceType) -> int:
+    return {"piped": 10, "borehole": 7, "surface": 3, "unprotected": 0}[source]
+
+
+def _dietary_score(d: DietaryInput) -> float:
+    diet = float(max(0, min(10, d.dietDiversity)))
+    water = float(_water_score(d.waterSource))
+    if d.recentDiarrhea:
+        freq = 5 if d.diarrheaFrequency is None else max(0, min(10, d.diarrheaFrequency))
+        diarrhea = float(10 - freq)
+    else:
+        diarrhea = 10.0
+    protective = (0.4 * diet + 0.3 * water + 0.3 * diarrhea) * 10.0
+    return _clamp(100.0 - protective, 0.0, 100.0)
+
+
+def _fusion_score(wasting: float, dietary: float, hint: float | None) -> float:
+    visual = wasting if hint is None else _clamp(hint, 0.0, 100.0)
+    return _clamp(0.6 * wasting + 0.25 * dietary + 0.15 * visual, 0.0, 100.0)
+
+
+def _risk(score: float) -> RiskLevel:
+    if score <= 30:
+        return "low"
+    if score <= 60:
+        return "moderate"
+    return "high"
+
+
+def _recommendations(risk: RiskLevel) -> list[str]:
+    if risk == "low":
+        return [
+            "Continue regular monthly growth monitoring.",
+            "Maintain diverse meals and safe drinking water.",
+            "Keep vaccination and deworming schedules updated.",
+        ]
+    if risk == "moderate":
+        return [
+            "Increase meal diversity with protein-rich foods and micronutrients.",
+            "Schedule nutrition follow-up within 2 weeks.",
+            "Monitor hydration and prevent recurrent diarrhea.",
+        ]
+    return [
+        "Refer child for urgent pediatric nutrition evaluation.",
+        "Begin close weekly follow-up until risk decreases.",
+        "Use supervised feeding plan and medical screening for infections.",
+    ]
+
+
+def _summary(report: Report) -> str:
+    return (
+        "Dhatu-Scan Assessment Report\n"
+        f"Child: {report.childName} ({report.childId})\n"
+        f"Generated at: {report.createdAt}\n"
+        f"WHO Z-score: {report.scores.whoZScore} ({report.scores.whoStatus})\n"
+        f"Wasting score: {report.scores.wastingScore}/100\n"
+        f"Dietary risk score: {report.scores.dietaryScore}/100\n"
+        f"Fusion score: {report.scores.fusionScore}/100\n"
+        f"Risk level: {report.scores.riskLevel}\n"
+        f"Capture mode: {report.capture.mode}\n"
+        f"Model: {report.capture.modelName} (confidence {round(report.capture.modelConfidence * 100, 2)}%)"
+    )
+
+
+app = FastAPI(title="Dhatu-Scan Python Backend", version="1.0.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+_reports: dict[str, Report] = {}
+_reports_lock = Lock()
+
+
+@app.get("/health")
+def health() -> dict[str, str]:
+    return {"status": "backend-ok"}
+
+
+@app.post("/guidance", response_model=GuidanceResponse)
+def evaluate_guidance(payload: LandmarkVisibility) -> GuidanceResponse:
+    body_cov = 1.0 if payload.bodyRequired <= 0 else min(payload.bodyDetected, payload.bodyRequired) / payload.bodyRequired
+    face_cov = 1.0 if payload.faceRequired <= 0 else min(payload.faceDetected, payload.faceRequired) / payload.faceRequired
+
+    weighted = (
+        body_cov * 0.45
+        + face_cov * 0.2
+        + (0.1 if payload.fullBodyVisible else 0.0)
+        + (0.08 if payload.centered else 0.0)
+        + (0.07 if payload.distanceOk else 0.0)
+        + (0.06 if payload.adequateLighting else 0.0)
+        + (0.04 if payload.headVisible and payload.feetVisible else 0.0)
+    )
+    score = int(_clamp(weighted * 100.0, 0.0, 100.0))
+    tips: list[GuidanceTip] = []
+    if body_cov < 0.85:
+        tips.append(GuidanceTip(message="Adjust framing: at least 33 body landmarks must be visible.", severity="critical"))
+    if face_cov < 0.85:
+        tips.append(GuidanceTip(message="Adjust face angle/lighting so all 468 facial landmarks are detected.", severity="warning"))
+    if not payload.fullBodyVisible:
+        tips.append(GuidanceTip(message="Ensure full body is in frame before capture.", severity="critical"))
+    if not payload.headVisible or not payload.feetVisible:
+        tips.append(GuidanceTip(message="Head and feet should both be visible for accurate anthropometry.", severity="warning"))
+    if not payload.centered:
+        tips.append(GuidanceTip(message="Move child to center of frame.", severity="info"))
+    if not payload.distanceOk:
+        tips.append(GuidanceTip(message="Step back to roughly 2 meters for full-body capture.", severity="info"))
+    if not payload.adequateLighting:
+        tips.append(GuidanceTip(message="Increase lighting to improve landmark and mask quality.", severity="warning"))
+    if not tips:
+        tips.append(GuidanceTip(message="Capture conditions are good. Proceed with scan.", severity="info"))
+
+    can_capture = (
+        score >= 80
+        and body_cov >= 0.85
+        and face_cov >= 0.85
+        and payload.fullBodyVisible
+        and payload.headVisible
+        and payload.feetVisible
+    )
+    return GuidanceResponse(readinessScore=score, canCapture=can_capture, tips=tips)
+
+
+@app.post("/assessment", response_model=AssessmentResponse)
+def generate_assessment(payload: AssessmentRequest) -> AssessmentResponse:
+    who_z, who_status = _who_zscore(payload.anthropometry)
+    wasting = _round2(_wasting_score(payload.anthropometry))
+    dietary = _round2(_dietary_score(payload.dietary))
+    fusion = _round2(_fusion_score(wasting, dietary, payload.capture.embeddingRiskHint))
+    risk = _risk(fusion)
+
+    report = Report(
+        id=f"rpt_{uuid4().hex}",
+        childId=payload.childId,
+        childName=payload.childName,
+        createdAt=_to_iso_now(),
+        capture=payload.capture,
+        scores=ScoreBreakdown(
+            whoZScore=who_z,
+            whoStatus=who_status,
+            wastingScore=wasting,
+            dietaryScore=dietary,
+            fusionScore=fusion,
+            riskLevel=risk,
+        ),
+        summary="",
+        recommendations=_recommendations(risk),
+        maskedImage=payload.maskedImage,
+    )
+    report.summary = _summary(report)
+
+    with _reports_lock:
+        _reports[report.id] = report
+
+    return AssessmentResponse(
+        report=report,
+        privacyNote="Original image is discarded immediately. Only face-masked image is optionally retained.",
+    )
+
+
+@app.get("/reports", response_model=list[Report])
+def list_reports(child_id: str | None = None) -> list[Report]:
+    with _reports_lock:
+        values = list(_reports.values())
+    if child_id:
+        values = [r for r in values if r.childId == child_id]
+    return values
+
+
+@app.get("/reports/{report_id}", response_model=Report)
+def get_report(report_id: str) -> Report:
+    with _reports_lock:
+        report = _reports.get(report_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail="Report not found")
+    return report
+
+
+@app.delete("/reports/{report_id}")
+def delete_report(report_id: str) -> dict[str, bool]:
+    with _reports_lock:
+        existed = report_id in _reports
+        if existed:
+            del _reports[report_id]
+    return {"deleted": existed}
+

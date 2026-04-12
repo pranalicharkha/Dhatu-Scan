@@ -7,6 +7,10 @@ import type {
   WaterSourceType,
 } from "@/types/index";
 import {
+  isBackendConfigured,
+  submitAssessmentToBackend,
+} from "@/lib/backendApi";
+import {
   calculateBMI,
   calculateDietaryScore,
   calculateFinalScore,
@@ -216,19 +220,66 @@ export default function Form() {
       if (existingChild) updateChild(childProfile);
       else addChild(childProfile);
 
-      // Calculate scores
-      const bmi = calculateBMI(w, h);
-      const wastingScore = calculateWastingScore(bmi, h, w, ageMonths);
       const waterScore = waterSourceToScore(form.waterSourceType);
       const diarrheaScore = form.recentDiarrhea ? 0 : 10;
-      const dietaryScore = calculateDietaryScore(
-        form.dietDiversity,
-        waterScore,
-        diarrheaScore,
-      );
-      const finalScore = calculateFinalScore(wastingScore, dietaryScore);
-      const { level: riskLevel } = getRiskCategory(finalScore);
-      const whoResult = calculateWHOZScore(h, w, ageMonths, form.gender);
+
+      let wastingScore = 0;
+      let dietaryScore = 0;
+      let finalScore = 0;
+      let riskLevel: Assessment["riskLevel"] = "moderate";
+      let whoZScore = 0;
+      let whoStatus: Assessment["whoStatus"] = "normal";
+      let usedBackend = false;
+
+      if (isBackendConfigured()) {
+        try {
+          const backendResult = await submitAssessmentToBackend({
+            childId,
+            childName: form.childName.trim(),
+            ageMonths,
+            gender: form.gender,
+            heightCm: h,
+            weightKg: w,
+            dietDiversity: form.dietDiversity,
+            waterSourceType: form.waterSourceType,
+            recentDiarrhea: form.recentDiarrhea,
+            diarrheaFrequency: form.recentDiarrhea ? 10 : 0,
+            breastfed: form.breastfed,
+            captureMode: "upload",
+            bodyLandmarksDetected: 0,
+            faceLandmarksDetected: 0,
+            faceMasked: false,
+            modelName: "frontend-form",
+            modelConfidence: 0.75,
+          });
+
+          wastingScore = backendResult.scores.wastingScore;
+          dietaryScore = backendResult.scores.dietaryScore;
+          finalScore = backendResult.scores.fusionScore;
+          riskLevel = backendResult.scores.riskLevel;
+          whoZScore = backendResult.scores.whoZScore;
+          whoStatus = backendResult.scores.whoStatus;
+          usedBackend = true;
+        } catch (error) {
+          console.warn("Backend assessment failed; using local scoring fallback.", error);
+        }
+      }
+
+      if (!usedBackend) {
+        // Fallback to local calculations when backend is unavailable.
+        const bmi = calculateBMI(w, h);
+        wastingScore = calculateWastingScore(bmi, h, w, ageMonths);
+        dietaryScore = calculateDietaryScore(
+          form.dietDiversity,
+          waterScore,
+          diarrheaScore,
+        );
+        finalScore = calculateFinalScore(wastingScore, dietaryScore);
+        riskLevel = getRiskCategory(finalScore).level;
+        const whoResult = calculateWHOZScore(h, w, ageMonths, form.gender);
+        whoZScore = whoResult.zScore;
+        whoStatus = whoResult.status;
+      }
 
       const assessment: Assessment = {
         id: crypto.randomUUID(),
@@ -241,8 +292,8 @@ export default function Form() {
         dietaryScore,
         finalScore,
         riskLevel,
-        whoZScore: whoResult.zScore,
-        whoStatus: whoResult.status,
+        whoZScore,
+        whoStatus,
         dietDiversity: form.dietDiversity,
         waterSource: waterScore,
         recentDiarrhea: diarrheaScore,
@@ -895,8 +946,8 @@ function StepLifestyle({
             Privacy Protected
           </p>
           <p className="text-xs text-muted-foreground mt-0.5">
-            All data is stored locally on your device. No information is sent to
-            any server.
+            Data is processed through your local secured backend service and can
+            retain only face-masked images when enabled.
           </p>
         </div>
       </div>

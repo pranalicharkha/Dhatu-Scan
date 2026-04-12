@@ -8,10 +8,129 @@
 
 import { IDL } from '@icp-sdk/core/candid';
 
-export const idlService = IDL.Service({});
+const TipSeverity = IDL.Variant({
+    info: IDL.Null,
+    warning: IDL.Null,
+    critical: IDL.Null
+});
+const GuidanceTip = IDL.Record({
+    message: IDL.Text,
+    severity: TipSeverity
+});
+const GuidanceResponse = IDL.Record({
+    readinessScore: IDL.Nat,
+    canCapture: IDL.Bool,
+    tips: IDL.Vec(GuidanceTip)
+});
+const LandmarkVisibility = IDL.Record({
+    bodyDetected: IDL.Nat,
+    faceDetected: IDL.Nat,
+    bodyRequired: IDL.Nat,
+    faceRequired: IDL.Nat,
+    fullBodyVisible: IDL.Bool,
+    adequateLighting: IDL.Bool,
+    centered: IDL.Bool,
+    distanceOk: IDL.Bool,
+    headVisible: IDL.Bool,
+    feetVisible: IDL.Bool
+});
+const Gender = IDL.Variant({
+    male: IDL.Null,
+    female: IDL.Null,
+    other: IDL.Null
+});
+const WaterSourceType = IDL.Variant({
+    piped: IDL.Null,
+    borehole: IDL.Null,
+    surface: IDL.Null,
+    unprotected: IDL.Null
+});
+const CaptureMode = IDL.Variant({
+    live: IDL.Null,
+    upload: IDL.Null
+});
+const StoredImage = IDL.Record({
+    contentType: IDL.Text,
+    bytes: IDL.Vec(IDL.Nat8)
+});
+const AnthropometryInput = IDL.Record({
+    ageMonths: IDL.Nat,
+    gender: Gender,
+    heightCm: IDL.Float64,
+    weightKg: IDL.Float64
+});
+const DietaryInput = IDL.Record({
+    dietDiversity: IDL.Nat,
+    waterSource: WaterSourceType,
+    recentDiarrhea: IDL.Bool,
+    diarrheaFrequency: IDL.Opt(IDL.Nat),
+    breastfed: IDL.Opt(IDL.Bool),
+    mealsPerDay: IDL.Opt(IDL.Nat)
+});
+const CaptureMeta = IDL.Record({
+    mode: CaptureMode,
+    bodyLandmarksDetected: IDL.Nat,
+    faceLandmarksDetected: IDL.Nat,
+    faceMasked: IDL.Bool,
+    modelName: IDL.Text,
+    modelConfidence: IDL.Float64,
+    embeddingRiskHint: IDL.Opt(IDL.Float64)
+});
+const RiskLevel = IDL.Variant({
+    low: IDL.Null,
+    moderate: IDL.Null,
+    high: IDL.Null
+});
+const WHOStatus = IDL.Variant({
+    normal: IDL.Null,
+    underweight: IDL.Null,
+    stunted: IDL.Null,
+    wasted: IDL.Null,
+    severe_wasting: IDL.Null
+});
+const ScoreBreakdown = IDL.Record({
+    whoZScore: IDL.Float64,
+    whoStatus: WHOStatus,
+    wastingScore: IDL.Float64,
+    dietaryScore: IDL.Float64,
+    fusionScore: IDL.Float64,
+    riskLevel: RiskLevel
+});
+const Report = IDL.Record({
+    id: IDL.Text,
+    childId: IDL.Text,
+    childName: IDL.Text,
+    createdAt: IDL.Int,
+    capture: CaptureMeta,
+    scores: ScoreBreakdown,
+    summary: IDL.Text,
+    recommendations: IDL.Vec(IDL.Text),
+    maskedImage: IDL.Opt(StoredImage)
+});
+const AssessmentRequest = IDL.Record({
+    childId: IDL.Text,
+    childName: IDL.Text,
+    anthropometry: AnthropometryInput,
+    dietary: DietaryInput,
+    capture: CaptureMeta,
+    originalImage: IDL.Opt(StoredImage),
+    maskedImage: IDL.Opt(StoredImage)
+});
+const AssessmentResponse = IDL.Record({
+    report: Report,
+    privacyNote: IDL.Text
+});
+export const idlService = IDL.Service({
+    healthCheck: IDL.Func([], [IDL.Text], ['query']),
+    evaluateGuidance: IDL.Func([LandmarkVisibility], [GuidanceResponse], ['query']),
+    generateAssessmentReport: IDL.Func([AssessmentRequest], [AssessmentResponse], []),
+    getReport: IDL.Func([IDL.Text], [IDL.Opt(Report)], ['query']),
+    listReports: IDL.Func([IDL.Opt(IDL.Text)], [IDL.Vec(Report)], ['query']),
+    deleteReport: IDL.Func([IDL.Text], [IDL.Bool], [])
+});
 
 export const idlInitArgs = [];
 
-export const idlFactory = ({ IDL }) => { return IDL.Service({}); };
+export const idlFactory = ({ IDL }) => { return idlService; };
 
 export const init = ({ IDL }) => { return []; };

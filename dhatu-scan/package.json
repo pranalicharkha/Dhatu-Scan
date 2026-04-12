@@ -4,14 +4,17 @@
   "engines": {
     "node": ">=16.0.0",
     "pnpm": ">=7.0.0",
-    "npm": "please use pnpm"
+    "npm": ">=10.0.0"
   },
   "scripts": {
     "build": "pnpm -r --if-present run build",
     "typecheck": "pnpm -r --if-present run typecheck",
     "check": "pnpm -r --if-present run check",
     "fix": "pnpm -r --if-present run fix",
-    "bindgen": "caffeine-bindgen --did-file ./src/backend/dist/backend.did --out-dir ./src/frontend/src --actor-interface-file --force"
+    "bindgen": "caffeine-bindgen --did-file ./src/backend/dist/backend.did --out-dir ./src/frontend/src --actor-interface-file --force",
+    "dev:backend:windows": "powershell -ExecutionPolicy Bypass -File ./scripts/run_backend_windows.ps1",
+    "dev:frontend:windows": "powershell -ExecutionPolicy Bypass -File ./scripts/run_frontend_windows.ps1",
+    "dev:windows": "powershell -ExecutionPolicy Bypass -File ./scripts/dev_windows.ps1"
   },
   "devDependencies": {
     "sharp": "^0.34.4"

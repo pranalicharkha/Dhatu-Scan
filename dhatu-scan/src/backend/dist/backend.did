@@ -1,2 +1,91 @@
+type AnthropometryInput = record {
+  ageMonths : nat;
+  gender : Gender;
+  heightCm : float64;
+  weightKg : float64;
+};
+type AssessmentRequest = record {
+  anthropometry : AnthropometryInput;
+  capture : CaptureMeta;
+  childId : text;
+  childName : text;
+  dietary : DietaryInput;
+  maskedImage : opt StoredImage;
+  originalImage : opt StoredImage;
+};
+type AssessmentResponse = record { privacyNote : text; report : Report };
+type CaptureMeta = record {
+  bodyLandmarksDetected : nat;
+  embeddingRiskHint : opt float64;
+  faceLandmarksDetected : nat;
+  faceMasked : bool;
+  mode : CaptureMode;
+  modelConfidence : float64;
+  modelName : text;
+};
+type CaptureMode = variant { live; upload };
+type DietaryInput = record {
+  breastfed : opt bool;
+  diarrheaFrequency : opt nat;
+  dietDiversity : nat;
+  mealsPerDay : opt nat;
+  recentDiarrhea : bool;
+  waterSource : WaterSourceType;
+};
+type Gender = variant { female; male; other };
+type GuidanceResponse = record {
+  canCapture : bool;
+  readinessScore : nat;
+  tips : vec GuidanceTip;
+};
+type GuidanceTip = record { message : text; severity : TipSeverity };
+type LandmarkVisibility = record {
+  adequateLighting : bool;
+  bodyDetected : nat;
+  bodyRequired : nat;
+  centered : bool;
+  distanceOk : bool;
+  faceDetected : nat;
+  faceRequired : nat;
+  feetVisible : bool;
+  fullBodyVisible : bool;
+  headVisible : bool;
+};
+type Report = record {
+  capture : CaptureMeta;
+  childId : text;
+  childName : text;
+  createdAt : int;
+  id : text;
+  maskedImage : opt StoredImage;
+  recommendations : vec text;
+  scores : ScoreBreakdown;
+  summary : text;
+};
+type RiskLevel = variant { high; low; moderate };
+type ScoreBreakdown = record {
+  dietaryScore : float64;
+  fusionScore : float64;
+  riskLevel : RiskLevel;
+  wastingScore : float64;
+  whoStatus : WHOStatus;
+  whoZScore : float64;
+};
+type StoredImage = record { bytes : vec nat8; contentType : text };
+type TipSeverity = variant { critical; info; warning };
+type WHOStatus = variant {
+  normal;
+  severe_wasting;
+  stunted;
+  underweight;
+  wasted;
+};
+type WaterSourceType = variant { borehole; piped; surface; unprotected };
 service : {
+  deleteReport : (text) -> (bool);
+  evaluateGuidance : (LandmarkVisibility) -> (GuidanceResponse) query;
+  generateAssessmentReport : (AssessmentRequest) -> (AssessmentResponse);
+  getReport : (text) -> (opt Report) query;
+  healthCheck : () -> (text) query;
+  listReports : (opt text) -> (vec Report) query;
 }
