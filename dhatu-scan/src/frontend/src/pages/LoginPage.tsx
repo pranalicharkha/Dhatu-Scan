@@ -1,6 +1,8 @@
 import { useApp } from "@/context/AppContext";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { motion } from "motion/react";
+import { useState } from "react";
+import { db } from "@/lib/db";
 
 const PALETTE = {
   page: "#f4ebdf",
@@ -17,10 +19,43 @@ const PALETTE = {
 export default function LoginPage() {
   const navigate = useNavigate();
   const { signIn } = useApp();
+  const [email, setEmail] = useState("caregiver@dhatuscan.app");
+  const [password, setPassword] = useState("password");
+  const [errorMsg, setErrorMsg] = useState("");
 
   const handleLogin = async () => {
-    signIn();
-    await navigate({ to: "/dashboard" });
+    try {
+      const formData = new URLSearchParams();
+      formData.append("username", email);
+      formData.append("password", password);
+
+      const response = await fetch("http://127.0.0.1:8000/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error("Invalid login credentials");
+      }
+
+      const data = await response.json();
+
+      // Save to Dexie Local Store (ID 1)
+      await db.currentUser.put({
+        id: 1,
+        email: email,
+        auth_token: data.access_token,
+        full_name: data.fullName || "Parent"
+      });
+
+      signIn();
+      await navigate({ to: "/dashboard" });
+    } catch (err: any) {
+      setErrorMsg(err.message || "Failed to login");
+    }
   };
 
   return (
@@ -134,7 +169,8 @@ export default function LoginPage() {
                   </label>
                   <input
                     type="email"
-                    defaultValue="caregiver@dhatuscan.app"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
                     className="w-full rounded-2xl px-4 py-3 text-sm outline-none"
                     style={{
                       backgroundColor: PALETTE.white,
@@ -150,7 +186,8 @@ export default function LoginPage() {
                   </label>
                   <input
                     type="password"
-                    defaultValue="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
                     className="w-full rounded-2xl px-4 py-3 text-sm outline-none"
                     style={{
                       backgroundColor: PALETTE.white,
@@ -159,6 +196,10 @@ export default function LoginPage() {
                     }}
                   />
                 </div>
+                
+                {errorMsg && (
+                  <div className="text-red-500 text-sm mt-2 font-medium">{errorMsg}</div>
+                )}
 
                 <button
                   type="button"

@@ -38,6 +38,7 @@ type AppAction =
   | { type: "SET_ACTIVE_CHILD"; payload: string | null }
   | { type: "ADD_CHILD"; payload: ChildProfile }
   | { type: "UPDATE_CHILD"; payload: ChildProfile }
+  | { type: "REMOVE_CHILD"; payload: string }
   | { type: "ADD_ASSESSMENT"; payload: Assessment }
   | { type: "UPDATE_GAMIFICATION"; payload: GamificationState }
   | { type: "SET_LOADING"; payload: boolean };
@@ -98,6 +99,12 @@ function appReducer(state: AppState, action: AppAction): AppState {
           child.id === action.payload.id ? action.payload : child,
         ),
       };
+    case "REMOVE_CHILD":
+      return {
+        ...state,
+        children: state.children.filter((child) => child.id !== action.payload),
+        activeChildId: state.activeChildId === action.payload ? null : state.activeChildId,
+      };
     case "ADD_ASSESSMENT":
       return {
         ...state,
@@ -120,6 +127,7 @@ interface AppContextValue {
   signOut: () => void;
   addChild: (child: ChildProfile) => void;
   updateChild: (child: ChildProfile) => void;
+  removeChild: (id: string) => void;
   setActiveChild: (id: string | null) => void;
   addAssessment: (assessment: Assessment) => void;
   awardXP: (xp: number) => void;
@@ -193,6 +201,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "UPDATE_CHILD", payload: child });
   }, []);
 
+  const removeChild = useCallback((id: string) => {
+    dispatch({ type: "REMOVE_CHILD", payload: id });
+  }, []);
+
   const setActiveChild = useCallback((id: string | null) => {
     dispatch({ type: "SET_ACTIVE_CHILD", payload: id });
   }, []);
@@ -263,6 +275,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         signOut,
         addChild,
         updateChild,
+        removeChild,
         setActiveChild,
         addAssessment,
         awardXP,

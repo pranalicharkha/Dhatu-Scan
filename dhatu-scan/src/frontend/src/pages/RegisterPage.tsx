@@ -1,6 +1,7 @@
 import { useApp } from "@/context/AppContext";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { motion } from "motion/react";
+import { useState } from "react";
 
 const PALETTE = {
   page: "#f4ebdf",
@@ -16,10 +17,52 @@ const PALETTE = {
 export default function RegisterPage() {
   const navigate = useNavigate();
   const { signIn } = useApp();
+  const [fullName, setFullName] = useState("Caregiver Name");
+  const [email, setEmail] = useState("caregiver@dhatuscan.app");
+  const [password, setPassword] = useState("password");
+  const [msg, setMsg] = useState("");
+
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleRegister = async () => {
-    signIn();
-    await navigate({ to: "/dashboard" });
+    setMsg("");
+    setIsLoading(true);
+    try {
+      // First check if backend is reachable
+      let backendOk = false;
+      try {
+        const health = await fetch("http://127.0.0.1:8000/health", { signal: AbortSignal.timeout(3000) });
+        backendOk = health.ok;
+      } catch {
+        throw new Error("Cannot reach the backend server. Please run: python -m uvicorn app:app --host 127.0.0.1 --port 8000 in the python-backend folder.");
+      }
+
+      if (!backendOk) throw new Error("Backend server returned an error. Please restart it.");
+
+      const response = await fetch("http://127.0.0.1:8000/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fullName, email, password }),
+      });
+
+      if (response.status === 400) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail === "Email already registered"
+          ? "This email is already registered. Please login instead."
+          : errorData.detail || "Registration failed");
+      }
+
+      if (!response.ok) {
+        throw new Error("Registration failed. Please try again.");
+      }
+
+      setMsg("Registration successful! Redirecting to login...");
+      setTimeout(() => navigate({ to: "/login" }), 1500);
+    } catch (err: any) {
+      setMsg(err.message || "Failed to register");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -117,7 +160,9 @@ export default function RegisterPage() {
                   </label>
                   <input
                     type="text"
-                    defaultValue="Caregiver Name"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    placeholder="Caregiver Name"
                     className="w-full rounded-2xl px-4 py-3 text-sm outline-none"
                     style={{
                       backgroundColor: PALETTE.white,
@@ -133,7 +178,9 @@ export default function RegisterPage() {
                   </label>
                   <input
                     type="email"
-                    defaultValue="caregiver@dhatuscan.app"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="caregiver@dhatuscan.app"
                     className="w-full rounded-2xl px-4 py-3 text-sm outline-none"
                     style={{
                       backgroundColor: PALETTE.white,
@@ -149,7 +196,9 @@ export default function RegisterPage() {
                   </label>
                   <input
                     type="password"
-                    defaultValue="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="password"
                     className="w-full rounded-2xl px-4 py-3 text-sm outline-none"
                     style={{
                       backgroundColor: PALETTE.white,
@@ -158,17 +207,24 @@ export default function RegisterPage() {
                     }}
                   />
                 </div>
+                
+                {msg && (
+                  <div className={`text-sm mt-2 font-medium ${msg.includes('success') ? 'text-green-600' : 'text-red-500'}`}>
+                    {msg}
+                  </div>
+                )}
 
                 <button
                   type="button"
                   onClick={handleRegister}
-                  className="w-full rounded-2xl px-5 py-3 font-semibold transition-smooth"
+                  disabled={isLoading}
+                  className="w-full rounded-2xl px-5 py-3 font-semibold transition-smooth disabled:opacity-60"
                   style={{
                     backgroundColor: PALETTE.buttonDark,
                     color: PALETTE.white,
                   }}
                 >
-                  Create Account
+                  {isLoading ? "Connecting..." : "Create Account"}
                 </button>
               </div>
             </div>

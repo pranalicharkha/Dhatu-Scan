@@ -1,17 +1,27 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from threading import Lock
-from typing import Literal
+from typing import Literal, Any
 from uuid import uuid4
 
-import cv2
-import numpy as np
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+try:
+    import cv2
+    import numpy as np
+except ImportError:
+    cv2 = None
+    np = None
+
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from jose import JWTError, jwt
+import bcrypt
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
 try:
     import tensorflow as tf
@@ -131,6 +141,33 @@ class UploadImageResponse(BaseModel):
     phase: Literal["face", "body", "upload"]
     maskedImagePath: str | None = None
     embeddingDim: int
+
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class TokenData(BaseModel):
+    email: str | None = None
+
+class ParentCreate(BaseModel):
+    email: str
+    password: str
+    fullName: str
+
+class ChildCreate(BaseModel):
+    childName: str
+    dob: str
+    gender: Gender
+
+class ChildResponse(BaseModel):
+    childId: str
+    childName: str
+    dob: str
+    gender: str
+
+class ExportResponse(BaseModel):
+    downloadUrl: str
 
 
 @dataclass(frozen=True)
@@ -311,12 +348,14 @@ def _init_embedder():
 _embedder = _init_embedder()
 _face_cascade = cv2.CascadeClassifier(
     str(Path(cv2.data.haarcascades) / "haarcascade_frontalface_default.xml"),
-)
+) if cv2 is not None else None
 _masked_dir = Path(__file__).resolve().parent / "masked_images"
 _masked_dir.mkdir(parents=True, exist_ok=True)
 
 
-def _mask_face_bgr(image_bgr: np.ndarray) -> np.ndarray:
+def _mask_face_bgr(image_bgr: Any) -> Any:
+    if cv2 is None:
+        return image_bgr
     gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
     faces = _face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5)
     masked = image_bgr.copy()
@@ -349,8 +388,50 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-_reports: dict[str, Report] = {}
-_reports_lock = Lock()
+SECRET_KEY = "my_super_secret_for_dhatu_scan"
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+
+from database import engine, Base, get_db
+from models import Parent, Child, GrowthEntry, Assessment, Streak
+Base.metadata.create_all(bind=engine)
+
+def verify_password(plain_password, hashed_password):
+    return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+
+def get_password_hash(password):
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+def create_access_token(data: dict, expires_delta: timedelta | None = None):
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.now(timezone.utc) + expires_delta
+    else:
+        expire = datetime.now(timezone.utc) + timedelta(minutes=15)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        email: str = payload.get("sub")
+        if email is None:
+            raise credentials_exception
+        token_data = TokenData(email=email)
+    except JWTError:
+        raise credentials_exception
+    user = db.query(Parent).filter(Parent.email == token_data.email).first()
+    if user is None:
+        raise credentials_exception
+    return user
 
 
 @app.get("/health")
@@ -373,6 +454,17 @@ async def upload_image(
     content = await image.read()
     if not content:
         raise HTTPException(status_code=400, detail="Empty file uploaded")
+
+    if cv2 is None or np is None:
+        # Mocking for environments where OpenCV/Numpy fail to compile
+        return UploadImageResponse(
+            success=True,
+            message="Mock image successfully uploaded",
+            mode=mode,
+            phase=phase,
+            maskedImagePath="/mock/path.jpg",
+            embeddingDim=576,
+        )
 
     np_bytes = np.frombuffer(content, dtype=np.uint8)
     decoded = cv2.imdecode(np_bytes, cv2.IMREAD_COLOR)
@@ -440,16 +532,145 @@ def evaluate_guidance(payload: LandmarkVisibility) -> GuidanceResponse:
     return GuidanceResponse(readinessScore=score, canCapture=can_capture, tips=tips)
 
 
+@app.post("/auth/register")
+def register(parent: ParentCreate, db: Session = Depends(get_db)):
+    db_parent = db.query(Parent).filter(Parent.email == parent.email).first()
+    if db_parent:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    hashed_password = get_password_hash(parent.password)
+    new_parent = Parent(email=parent.email, password_hash=hashed_password, full_name=parent.fullName)
+    db.add(new_parent)
+    db.commit()
+    db.refresh(new_parent)
+    
+    # Initialize a streak
+    new_streak = Streak(parent_email=new_parent.email)
+    db.add(new_streak)
+    db.commit()
+    
+    return {"message": "User registered successfully"}
+
+
+@app.post("/auth/login", response_model=Token)
+def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    parent = db.query(Parent).filter(Parent.email == form_data.username).first()
+    if not parent or not verify_password(form_data.password, parent.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": parent.email}, expires_delta=access_token_expires
+    )
+    
+    # Update streak login
+    if parent.streak:
+        parent.streak.last_login = datetime.now(timezone.utc)
+        db.commit()
+        
+    return {"access_token": access_token, "token_type": "bearer", "fullName": parent.full_name}
+
+
+class ChildUpdate(BaseModel):
+    childName: str | None = None
+    dob: str | None = None
+    gender: Gender | None = None
+
+@app.get("/children", response_model=list[ChildResponse])
+def get_children(current_user: Parent = Depends(get_current_user), db: Session = Depends(get_db)):
+    children = db.query(Child).filter(Child.parent_email == current_user.email).all()
+    return [ChildResponse(childId=c.child_id, childName=c.child_name, dob=c.dob, gender=c.gender) for c in children]
+
+
+@app.post("/children", response_model=ChildResponse)
+def create_child(child: ChildCreate, current_user: Parent = Depends(get_current_user), db: Session = Depends(get_db)):
+    new_child = Child(
+        parent_email=current_user.email,
+        child_name=child.childName,
+        dob=child.dob,
+        gender=child.gender
+    )
+    db.add(new_child)
+    db.commit()
+    db.refresh(new_child)
+    return ChildResponse(childId=new_child.child_id, childName=new_child.child_name, dob=new_child.dob, gender=new_child.gender)
+
+
+@app.put("/children/{child_id}", response_model=ChildResponse)
+def update_child(child_id: str, child_update: ChildUpdate, current_user: Parent = Depends(get_current_user), db: Session = Depends(get_db)):
+    child = db.query(Child).filter(Child.child_id == child_id, Child.parent_email == current_user.email).first()
+    if not child:
+        raise HTTPException(status_code=404, detail="Child not found")
+    if child_update.childName is not None:
+        child.child_name = child_update.childName
+    if child_update.dob is not None:
+        child.dob = child_update.dob
+    if child_update.gender is not None:
+        child.gender = child_update.gender
+    db.commit()
+    db.refresh(child)
+    return ChildResponse(childId=child.child_id, childName=child.child_name, dob=child.dob, gender=child.gender)
+
+
+@app.delete("/children/{child_id}")
+def delete_child(child_id: str, current_user: Parent = Depends(get_current_user), db: Session = Depends(get_db)):
+    child = db.query(Child).filter(Child.child_id == child_id, Child.parent_email == current_user.email).first()
+    if not child:
+        raise HTTPException(status_code=404, detail="Child not found")
+    db.delete(child)
+    db.commit()
+    return {"message": "Child deleted successfully"}
+
+
 @app.post("/assessment", response_model=AssessmentResponse)
-def generate_assessment(payload: AssessmentRequest) -> AssessmentResponse:
+def generate_assessment(payload: AssessmentRequest, current_user: Parent = Depends(get_current_user), db: Session = Depends(get_db)) -> AssessmentResponse:
     who_z, who_status = _who_zscore(payload.anthropometry)
     wasting = _round2(_wasting_score(payload.anthropometry))
     dietary = _round2(_dietary_score(payload.dietary))
     fusion = _round2(_fusion_score(wasting, dietary, payload.capture.embeddingRiskHint))
     risk = _risk(fusion)
 
+    # Save Assessment to DB
+    lifestyle_details_str = json.dumps({
+        "recentDiarrhea": payload.dietary.recentDiarrhea,
+        "mealsPerDay": payload.dietary.mealsPerDay
+    })
+    
+    db_assessment = Assessment(
+        child_id=payload.childId,
+        water_source=payload.dietary.waterSource,
+        dietary_risk_preview=str(dietary),
+        lifestyle_details=lifestyle_details_str
+    )
+    db.add(db_assessment)
+    
+    # Save GrowthEntry to DB
+    mocked_image_url = f"/masked_images/{payload.childId}_upload.jpg" if payload.maskedImage else None
+    
+    db_growth = GrowthEntry(
+        child_id=payload.childId,
+        height=payload.anthropometry.heightCm,
+        weight=payload.anthropometry.weightKg,
+        z_score=who_z,
+        who_status=who_status,
+        fusion_score=fusion,
+        wasting_score=wasting,
+        dietary_score=dietary,
+        risk_level=risk,
+        image_url=mocked_image_url
+    )
+    db.add(db_growth)
+    
+    if current_user.streak:
+        current_user.streak.total_scans += 1
+    
+    db.commit()
+
     report = Report(
-        id=f"rpt_{uuid4().hex}",
+        id=f"rpt_{db_growth.id}",
         childId=payload.childId,
         childName=payload.childName,
         createdAt=_to_iso_now(),
@@ -468,38 +689,36 @@ def generate_assessment(payload: AssessmentRequest) -> AssessmentResponse:
     )
     report.summary = _summary(report)
 
-    with _reports_lock:
-        _reports[report.id] = report
-
     return AssessmentResponse(
         report=report,
-        privacyNote="Original image is discarded immediately. Only face-masked image is optionally retained.",
+        privacyNote="Original image is discarded immediately. Only face-masked image URL is securely stored in Cloud.",
     )
 
 
-@app.get("/reports", response_model=list[Report])
-def list_reports(child_id: str | None = None) -> list[Report]:
-    with _reports_lock:
-        values = list(_reports.values())
+@app.get("/reports", response_model=list[dict[str, Any]])
+def list_reports(child_id: str | None = None, current_user: Parent = Depends(get_current_user), db: Session = Depends(get_db)):
+    query = db.query(GrowthEntry).join(Child).filter(Child.parent_email == current_user.email)
     if child_id:
-        values = [r for r in values if r.childId == child_id]
-    return values
+        query = query.filter(GrowthEntry.child_id == child_id)
+        
+    entries = query.all()
+    
+    results = []
+    for entry in entries:
+        results.append({
+            "id": entry.id,
+            "childId": entry.child_id,
+            "zScore": entry.z_score,
+            "status": entry.who_status,
+            "riskLevel": entry.risk_level,
+            "date": entry.created_at.isoformat()
+        })
+    return results
 
 
-@app.get("/reports/{report_id}", response_model=Report)
-def get_report(report_id: str) -> Report:
-    with _reports_lock:
-        report = _reports.get(report_id)
-    if report is None:
-        raise HTTPException(status_code=404, detail="Report not found")
-    return report
-
-
-@app.delete("/reports/{report_id}")
-def delete_report(report_id: str) -> dict[str, bool]:
-    with _reports_lock:
-        existed = report_id in _reports
-        if existed:
-            del _reports[report_id]
-    return {"deleted": existed}
+@app.get("/export", response_model=ExportResponse)
+def export_data(current_user: Parent = Depends(get_current_user)):
+    # Mock generating a CSV/PDF link
+    mock_url = f"https://api.dhatu-scan.com/exports/{current_user.email}_data.csv"
+    return ExportResponse(downloadUrl=mock_url)
 

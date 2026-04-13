@@ -3,8 +3,11 @@ import { useApp } from "@/context/AppContext";
 import type { ChildProfile, Gender } from "@/types";
 import { formatAgeFromMonths, calculateAgeInMonths } from "@/utils/childAge";
 import { Link } from "@tanstack/react-router";
-import { motion } from "motion/react";
+import { motion, AnimatePresence } from "motion/react";
 import { useMemo, useState } from "react";
+import { db } from "@/lib/db";
+
+const API_BASE = "http://127.0.0.1:8000";
 
 const PALETTE = {
   page: "#F2EAE0",
@@ -16,6 +19,7 @@ const PALETTE = {
   accent: "#9C8FCB",
   blue: "#B5D1DA",
   white: "#FFFAF5",
+  red: "#e05c5c",
 };
 
 type ChildFormState = {
@@ -24,60 +28,59 @@ type ChildFormState = {
   gender: Gender;
 };
 
-const INITIAL_FORM: ChildFormState = {
-  name: "",
-  dateOfBirth: "",
-  gender: "male",
-};
+const INITIAL_FORM: ChildFormState = { name: "", dateOfBirth: "", gender: "male" };
+
+async function getToken(): Promise<string | null> {
+  const user = await db.currentUser.get(1);
+  return user?.auth_token ?? null;
+}
 
 export default function ChildProfilesPage() {
-  const { state, activeChild, addChild, setActiveChild } = useApp();
+  const { state, activeChild, addChild, updateChild, removeChild, setActiveChild } = useApp();
   const [form, setForm] = useState<ChildFormState>(INITIAL_FORM);
-  const [errors, setErrors] = useState<Partial<Record<keyof ChildFormState, string>>>(
-    {},
-  );
+  const [errors, setErrors] = useState<Partial<Record<keyof ChildFormState, string>>>({});
+  const [isLoading, setIsLoading] = useState(false);
+  const [apiMsg, setApiMsg] = useState("");
+
+  // For editing
+  const [editingChildId, setEditingChildId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<ChildFormState>(INITIAL_FORM);
 
   const sortedChildren = useMemo(
-    () =>
-      [...state.children].sort(
-        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-      ),
+    () => [...state.children].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
     [state.children],
   );
 
-  function update<K extends keyof ChildFormState>(
-    key: K,
-    value: ChildFormState[K],
-  ) {
+  function update<K extends keyof ChildFormState>(key: K, value: ChildFormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
     setErrors((prev) => ({ ...prev, [key]: undefined }));
   }
 
-  function validate() {
+  function updateEdit<K extends keyof ChildFormState>(key: K, value: ChildFormState[K]) {
+    setEditForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function validate(f: ChildFormState) {
     const nextErrors: Partial<Record<keyof ChildFormState, string>> = {};
-
-    if (!form.name.trim()) {
-      nextErrors.name = "Child name is required";
-    }
-
-    if (!form.dateOfBirth) {
+    if (!f.name.trim()) nextErrors.name = "Child name is required";
+    if (!f.dateOfBirth) {
       nextErrors.dateOfBirth = "Date of birth is required";
     } else {
-      const ageMonths = calculateAgeInMonths(form.dateOfBirth);
-      if (ageMonths > 120) {
-        nextErrors.dateOfBirth = "This profile flow is for children up to 10 years";
-      }
+      const ageMonths = calculateAgeInMonths(f.dateOfBirth);
+      if (ageMonths > 120) nextErrors.dateOfBirth = "This profile flow is for children up to 10 years";
     }
-
     setErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
   }
 
-  function handleAddChild() {
-    if (!validate()) return;
+  // ─── ADD CHILD ────────────────────────────────────────────────────────────
+  async function handleAddChild() {
+    if (!validate(form)) return;
+    setIsLoading(true);
+    setApiMsg("");
 
     const now = new Date().toISOString();
-    const profile: ChildProfile = {
+    const localProfile: ChildProfile = {
       id: crypto.randomUUID(),
       name: form.name.trim(),
       dateOfBirth: form.dateOfBirth,
@@ -89,68 +92,148 @@ export default function ChildProfilesPage() {
       updatedAt: now,
     };
 
-    addChild(profile);
+    // Save to local React state + Dexie immediately (offline-first)
+    addChild(localProfile);
+    await db.childProfiles.put({
+      childId: localProfile.id,
+      parentEmail: "",
+      childName: localProfile.name,
+      dob: localProfile.dateOfBirth,
+      gender: localProfile.gender,
+    });
+
+    // Try to sync to cloud if available
+    try {
+      const token = await getToken();
+      if (token) {
+        const resp = await fetch(`${API_BASE}/children`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ childName: localProfile.name, dob: localProfile.dateOfBirth, gender: localProfile.gender }),
+          signal: AbortSignal.timeout(4000),
+        });
+        if (resp.ok) {
+          const cloudChild = await resp.json();
+          // Update local Dexie with the cloud's canonical ID
+          await db.childProfiles.delete(localProfile.id);
+          await db.childProfiles.put({
+            childId: cloudChild.childId,
+            parentEmail: "",
+            childName: cloudChild.childName,
+            dob: cloudChild.dob,
+            gender: cloudChild.gender,
+          });
+          setApiMsg("✅ Child saved to cloud & local device.");
+        }
+      } else {
+        setApiMsg("⚠️ Saved locally only. Login to sync to cloud.");
+      }
+    } catch {
+      setApiMsg("⚠️ Saved locally only — cloud sync will happen when online.");
+    }
+
     setForm(INITIAL_FORM);
+    setIsLoading(false);
+  }
+
+  // ─── START EDIT ──────────────────────────────────────────────────────────
+  function startEditing(child: ChildProfile) {
+    setEditingChildId(child.id);
+    setEditForm({ name: child.name, dateOfBirth: child.dateOfBirth ?? "", gender: child.gender });
+  }
+
+  // ─── SAVE EDIT ───────────────────────────────────────────────────────────
+  async function handleSaveEdit(child: ChildProfile) {
+    if (!editForm.name.trim()) return;
+    setIsLoading(true);
+
+    const now = new Date().toISOString();
+    // Update local state
+    updateChild({ ...child, name: editForm.name, dateOfBirth: editForm.dateOfBirth, gender: editForm.gender, updatedAt: now });
+    // Update Dexie
+    await db.childProfiles.update(child.id, { childName: editForm.name, dob: editForm.dateOfBirth, gender: editForm.gender });
+
+    // Sync to cloud
+    try {
+      const token = await getToken();
+      if (token) {
+        await fetch(`${API_BASE}/children/${child.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ childName: editForm.name, dob: editForm.dateOfBirth, gender: editForm.gender }),
+          signal: AbortSignal.timeout(4000),
+        });
+      }
+    } catch { /* will sync later */ }
+
+    setEditingChildId(null);
+    setIsLoading(false);
+  }
+
+  // ─── DELETE CHILD ────────────────────────────────────────────────────────
+  async function handleDeleteChild(child: ChildProfile) {
+    if (!window.confirm(`Delete profile for ${child.name}? This cannot be undone.`)) return;
+    setIsLoading(true);
+
+    // Remove from local state and Dexie
+    removeChild(child.id);
+    await db.childProfiles.delete(child.id);
+
+    // Delete from cloud
+    try {
+      const token = await getToken();
+      if (token) {
+        await fetch(`${API_BASE}/children/${child.id}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+          signal: AbortSignal.timeout(4000),
+        });
+      }
+    } catch { /* Already removed locally */ }
+
+    setIsLoading(false);
   }
 
   return (
     <div className="min-h-screen px-4 py-8 sm:px-6 lg:px-10" style={{ backgroundColor: PALETTE.page }}>
       <div className="mx-auto max-w-7xl">
         <section className="grid gap-6 lg:grid-cols-[0.95fr_1.35fr] lg:items-start">
+          {/* ─── ADD FORM ─── */}
           <GlassCard variant="elevated" className="rounded-[2rem] p-8 lg:sticky lg:top-8">
             <div>
-              <p className="text-sm uppercase tracking-[0.22em]" style={{ color: PALETTE.muted }}>
-                Add Child
-              </p>
-              <h2 className="mt-2 font-display text-3xl font-semibold" style={{ color: PALETTE.ink }}>
-                New child profile
-              </h2>
+              <p className="text-sm uppercase tracking-[0.22em]" style={{ color: PALETTE.muted }}>Add Child</p>
+              <h2 className="mt-2 font-display text-3xl font-semibold" style={{ color: PALETTE.ink }}>New child profile</h2>
             </div>
 
             <div className="mt-8 space-y-4">
               <div>
-                <label className="mb-2 block text-sm font-medium" style={{ color: PALETTE.muted }}>
-                  Child Name
-                </label>
+                <label className="mb-2 block text-sm font-medium" style={{ color: PALETTE.muted }}>Child Name</label>
                 <input
                   type="text"
                   value={form.name}
                   onChange={(e) => update("name", e.target.value)}
+                  placeholder="e.g. Aarav"
                   className="w-full rounded-2xl px-4 py-3 text-sm outline-none"
-                  style={{
-                    backgroundColor: PALETTE.white,
-                    color: PALETTE.ink,
-                    border: `1px solid ${PALETTE.border}`,
-                  }}
+                  style={{ backgroundColor: PALETTE.white, color: PALETTE.ink, border: `1px solid ${PALETTE.border}` }}
                 />
                 {errors.name && <p className="mt-1 text-xs text-red-500">{errors.name}</p>}
               </div>
 
               <div>
-                <label className="mb-2 block text-sm font-medium" style={{ color: PALETTE.muted }}>
-                  Date Of Birth
-                </label>
+                <label className="mb-2 block text-sm font-medium" style={{ color: PALETTE.muted }}>Date Of Birth</label>
                 <input
                   type="date"
                   max={new Date().toISOString().split("T")[0]}
                   value={form.dateOfBirth}
                   onChange={(e) => update("dateOfBirth", e.target.value)}
                   className="w-full rounded-2xl px-4 py-3 text-sm outline-none"
-                  style={{
-                    backgroundColor: PALETTE.white,
-                    color: PALETTE.ink,
-                    border: `1px solid ${PALETTE.border}`,
-                  }}
+                  style={{ backgroundColor: PALETTE.white, color: PALETTE.ink, border: `1px solid ${PALETTE.border}` }}
                 />
-                {errors.dateOfBirth && (
-                  <p className="mt-1 text-xs text-red-500">{errors.dateOfBirth}</p>
-                )}
+                {errors.dateOfBirth && <p className="mt-1 text-xs text-red-500">{errors.dateOfBirth}</p>}
               </div>
 
               <div>
-                <label className="mb-2 block text-sm font-medium" style={{ color: PALETTE.muted }}>
-                  Gender
-                </label>
+                <label className="mb-2 block text-sm font-medium" style={{ color: PALETTE.muted }}>Gender</label>
                 <div className="grid grid-cols-2 gap-3">
                   {(["male", "female"] as Gender[]).map((gender) => (
                     <button
@@ -161,11 +244,7 @@ export default function ChildProfilesPage() {
                       style={
                         form.gender === gender
                           ? { backgroundColor: PALETTE.accent, color: PALETTE.white }
-                          : {
-                              backgroundColor: PALETTE.white,
-                              color: PALETTE.ink,
-                              border: `1px solid ${PALETTE.border}`,
-                            }
+                          : { backgroundColor: PALETTE.white, color: PALETTE.ink, border: `1px solid ${PALETTE.border}` }
                       }
                     >
                       {gender}
@@ -174,38 +253,43 @@ export default function ChildProfilesPage() {
                 </div>
               </div>
 
+              {apiMsg && (
+                <p className="text-xs font-medium" style={{ color: apiMsg.startsWith("✅") ? "#2e7d32" : "#b45309" }}>
+                  {apiMsg}
+                </p>
+              )}
+
               <button
                 type="button"
                 onClick={handleAddChild}
-                className="w-full rounded-2xl px-5 py-3 font-semibold transition-smooth"
+                disabled={isLoading}
+                className="w-full rounded-2xl px-5 py-3 font-semibold transition-smooth disabled:opacity-60"
                 style={{ backgroundColor: PALETTE.ink, color: PALETTE.white }}
               >
-                Save Child Profile
+                {isLoading ? "Saving..." : "Save Child Profile"}
               </button>
             </div>
           </GlassCard>
 
+          {/* ─── PROFILES LIST ─── */}
           <div>
             <div className="mb-4 flex items-center justify-between">
-            <div>
-              <p className="text-sm uppercase tracking-[0.22em]" style={{ color: PALETTE.muted }}>
-                Saved Profiles
-              </p>
-              <h2 className="mt-2 font-display text-3xl font-semibold" style={{ color: PALETTE.ink }}>
-                Choose the child you want to screen
-              </h2>
-            </div>
-            <div className="rounded-full px-4 py-2 text-sm font-semibold" style={{ backgroundColor: PALETTE.white, color: PALETTE.ink }}>
-              {sortedChildren.length} profiles
-            </div>
+              <div>
+                <p className="text-sm uppercase tracking-[0.22em]" style={{ color: PALETTE.muted }}>Saved Profiles</p>
+                <h2 className="mt-2 font-display text-3xl font-semibold" style={{ color: PALETTE.ink }}>
+                  Choose the child you want to screen
+                </h2>
+              </div>
+              <div className="rounded-full px-4 py-2 text-sm font-semibold" style={{ backgroundColor: PALETTE.white, color: PALETTE.ink }}>
+                {sortedChildren.length} profiles
+              </div>
             </div>
 
-            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-2">
+            <div className="grid gap-5 md:grid-cols-2">
               {sortedChildren.map((child, index) => {
-                const ageMonths = child.dateOfBirth
-                  ? calculateAgeInMonths(child.dateOfBirth)
-                  : child.age;
+                const ageMonths = child.dateOfBirth ? calculateAgeInMonths(child.dateOfBirth) : child.age;
                 const isActive = activeChild?.id === child.id;
+                const isEditing = editingChildId === child.id;
 
                 return (
                   <motion.div
@@ -215,88 +299,140 @@ export default function ChildProfilesPage() {
                     transition={{ duration: 0.3, delay: index * 0.05 }}
                   >
                     <GlassCard variant="elevated" className="rounded-[2rem] p-6">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-3">
-                          <div
-                            className="flex h-12 w-12 items-center justify-center rounded-2xl text-sm font-bold"
-                            style={{ backgroundColor: PALETTE.blue, color: PALETTE.ink }}
-                          >
-                            {child.name.slice(0, 2).toUpperCase()}
-                          </div>
-                          <div>
-                            <h3 className="text-lg font-semibold" style={{ color: PALETTE.ink }}>
-                              {child.name}
-                            </h3>
-                            <p className="text-sm capitalize" style={{ color: PALETTE.muted }}>
-                              {child.gender}
-                            </p>
-                          </div>
-                        </div>
-                        {isActive && (
-                          <span
-                            className="rounded-full px-3 py-1 text-xs font-semibold"
-                            style={{ backgroundColor: PALETTE.accent, color: PALETTE.white }}
-                          >
-                            Active
-                          </span>
-                        )}
-                      </div>
+                      <AnimatePresence mode="wait">
+                        {isEditing ? (
+                          // ── EDIT MODE ──
+                          <motion.div key="edit" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-3">
+                            <p className="text-sm font-semibold" style={{ color: PALETTE.muted }}>Editing profile</p>
+                            <input
+                              type="text"
+                              value={editForm.name}
+                              onChange={(e) => updateEdit("name", e.target.value)}
+                              placeholder="Child name"
+                              className="w-full rounded-xl px-3 py-2 text-sm outline-none"
+                              style={{ backgroundColor: PALETTE.white, color: PALETTE.ink, border: `1px solid ${PALETTE.border}` }}
+                            />
+                            <input
+                              type="date"
+                              value={editForm.dateOfBirth}
+                              onChange={(e) => updateEdit("dateOfBirth", e.target.value)}
+                              className="w-full rounded-xl px-3 py-2 text-sm outline-none"
+                              style={{ backgroundColor: PALETTE.white, color: PALETTE.ink, border: `1px solid ${PALETTE.border}` }}
+                            />
+                            <div className="flex gap-2">
+                              {(["male", "female"] as Gender[]).map((g) => (
+                                <button
+                                  key={g}
+                                  type="button"
+                                  onClick={() => updateEdit("gender", g)}
+                                  className="flex-1 rounded-xl py-2 text-sm font-semibold capitalize transition-smooth"
+                                  style={
+                                    editForm.gender === g
+                                      ? { backgroundColor: PALETTE.accent, color: PALETTE.white }
+                                      : { backgroundColor: PALETTE.white, color: PALETTE.ink, border: `1px solid ${PALETTE.border}` }
+                                  }
+                                >
+                                  {g}
+                                </button>
+                              ))}
+                            </div>
+                            <div className="flex gap-2 pt-1">
+                              <button
+                                type="button"
+                                onClick={() => handleSaveEdit(child)}
+                                disabled={isLoading}
+                                className="flex-1 rounded-full py-2 text-sm font-semibold transition-smooth disabled:opacity-60"
+                                style={{ backgroundColor: PALETTE.accent, color: PALETTE.white }}
+                              >
+                                Save
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingChildId(null)}
+                                className="flex-1 rounded-full py-2 text-sm font-semibold transition-smooth"
+                                style={{ backgroundColor: PALETTE.white, color: PALETTE.ink, border: `1px solid ${PALETTE.border}` }}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </motion.div>
+                        ) : (
+                          // ── VIEW MODE ──
+                          <motion.div key="view" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex items-center gap-3">
+                                <div
+                                  className="flex h-12 w-12 items-center justify-center rounded-2xl text-sm font-bold"
+                                  style={{ backgroundColor: PALETTE.blue, color: PALETTE.ink }}
+                                >
+                                  {child.name.slice(0, 2).toUpperCase()}
+                                </div>
+                                <div>
+                                  <h3 className="text-lg font-semibold" style={{ color: PALETTE.ink }}>{child.name}</h3>
+                                  <p className="text-sm capitalize" style={{ color: PALETTE.muted }}>{child.gender}</p>
+                                </div>
+                              </div>
+                              {isActive && (
+                                <span className="rounded-full px-3 py-1 text-xs font-semibold" style={{ backgroundColor: PALETTE.accent, color: PALETTE.white }}>
+                                  Active
+                                </span>
+                              )}
+                            </div>
 
-                      <div className="mt-5 grid grid-cols-2 gap-3">
-                        <div
-                          className="rounded-2xl p-3"
-                          style={{ background: PALETTE.soft, border: `1px solid ${PALETTE.border}` }}
-                        >
-                          <p className="text-xs uppercase tracking-[0.18em]" style={{ color: PALETTE.muted }}>
-                            Age
-                          </p>
-                          <p className="mt-2 text-sm font-semibold" style={{ color: PALETTE.ink }}>
-                            {formatAgeFromMonths(ageMonths)}
-                          </p>
-                        </div>
-                        <div
-                          className="rounded-2xl p-3"
-                          style={{ background: PALETTE.soft, border: `1px solid ${PALETTE.border}` }}
-                        >
-                          <p className="text-xs uppercase tracking-[0.18em]" style={{ color: PALETTE.muted }}>
-                            Date Of Birth
-                          </p>
-                          <p className="mt-2 text-sm font-semibold" style={{ color: PALETTE.ink }}>
-                            {child.dateOfBirth ?? "Not set"}
-                          </p>
-                        </div>
-                      </div>
+                            <div className="mt-5 grid grid-cols-2 gap-3">
+                              <div className="rounded-2xl p-3" style={{ background: PALETTE.soft, border: `1px solid ${PALETTE.border}` }}>
+                                <p className="text-xs uppercase tracking-[0.18em]" style={{ color: PALETTE.muted }}>Age</p>
+                                <p className="mt-2 text-sm font-semibold" style={{ color: PALETTE.ink }}>{formatAgeFromMonths(ageMonths)}</p>
+                              </div>
+                              <div className="rounded-2xl p-3" style={{ background: PALETTE.soft, border: `1px solid ${PALETTE.border}` }}>
+                                <p className="text-xs uppercase tracking-[0.18em]" style={{ color: PALETTE.muted }}>Date Of Birth</p>
+                                <p className="mt-2 text-sm font-semibold" style={{ color: PALETTE.ink }}>{child.dateOfBirth ?? "Not set"}</p>
+                              </div>
+                            </div>
 
-                      <div className="mt-5 flex gap-3">
-                        <button
-                          type="button"
-                          onClick={() => setActiveChild(child.id)}
-                          className="flex-1 rounded-full px-4 py-2.5 text-sm font-semibold transition-smooth"
-                          style={
-                            isActive
-                              ? {
-                                  backgroundColor: PALETTE.white,
-                                  color: PALETTE.ink,
-                                  border: `1px solid ${PALETTE.border}`,
+                            <div className="mt-5 flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setActiveChild(child.id)}
+                                className="flex-1 rounded-full px-4 py-2.5 text-sm font-semibold transition-smooth"
+                                style={
+                                  isActive
+                                    ? { backgroundColor: PALETTE.white, color: PALETTE.ink, border: `1px solid ${PALETTE.border}` }
+                                    : { backgroundColor: PALETTE.accent, color: PALETTE.white }
                                 }
-                              : { backgroundColor: PALETTE.accent, color: PALETTE.white }
-                          }
-                        >
-                          {isActive ? "Currently Selected" : "Switch To This Child"}
-                        </button>
-                        <Link
-                          to="/form"
-                          onClick={() => setActiveChild(child.id)}
-                          className="rounded-full px-4 py-2.5 text-sm font-semibold transition-smooth"
-                          style={{
-                            backgroundColor: PALETTE.white,
-                            color: PALETTE.ink,
-                            border: `1px solid ${PALETTE.border}`,
-                          }}
-                        >
-                          Screen
-                        </Link>
-                      </div>
+                              >
+                                {isActive ? "Selected" : "Select"}
+                              </button>
+                              <Link
+                                to="/form"
+                                onClick={() => setActiveChild(child.id)}
+                                className="rounded-full px-4 py-2.5 text-sm font-semibold transition-smooth"
+                                style={{ backgroundColor: PALETTE.white, color: PALETTE.ink, border: `1px solid ${PALETTE.border}` }}
+                              >
+                                Screen
+                              </Link>
+                              <button
+                                type="button"
+                                onClick={() => startEditing(child)}
+                                className="rounded-full px-3 py-2.5 text-sm font-semibold transition-smooth"
+                                style={{ backgroundColor: PALETTE.white, color: PALETTE.ink, border: `1px solid ${PALETTE.border}` }}
+                                title="Edit"
+                              >
+                                ✏️
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteChild(child)}
+                                className="rounded-full px-3 py-2.5 text-sm font-semibold transition-smooth"
+                                style={{ backgroundColor: "#fde8e8", color: PALETTE.red, border: `1px solid #f5c2c2` }}
+                                title="Delete"
+                              >
+                                🗑️
+                              </button>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </GlassCard>
                   </motion.div>
                 );
