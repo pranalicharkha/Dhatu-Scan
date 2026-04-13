@@ -17,6 +17,7 @@
     "dev:windows": "powershell -ExecutionPolicy Bypass -File ./scripts/dev_windows.ps1"
   },
   "devDependencies": {
+    "concurrently": "^9.2.1",
     "sharp": "^0.34.4"
   }
 }

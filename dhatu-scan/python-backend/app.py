@@ -2,13 +2,27 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from threading import Lock
 from typing import Literal
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException
+import cv2
+import numpy as np
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+
+try:
+    import tensorflow as tf
+    from tensorflow.keras.applications.mobilenet_v3 import (  # type: ignore
+        MobileNetV3Small,
+        preprocess_input,
+    )
+except Exception:  # pragma: no cover - tensorflow is optional at import time
+    tf = None
+    MobileNetV3Small = None
+    preprocess_input = None
 
 
 Gender = Literal["male", "female", "other"]
@@ -110,6 +124,15 @@ class AssessmentResponse(BaseModel):
     privacyNote: str
 
 
+class UploadImageResponse(BaseModel):
+    success: bool
+    message: str
+    mode: CaptureMode
+    phase: Literal["face", "body", "upload"]
+    maskedImagePath: str | None = None
+    embeddingDim: int
+
+
 @dataclass(frozen=True)
 class WHORef:
     age: int
@@ -131,6 +154,8 @@ WHO_REFS: list[WHORef] = [
     WHORef(48, 16.3, 15.9, 103.3, 102.7, 1.6, 3.8),
     WHORef(60, 18.3, 17.7, 110.0, 109.4, 1.8, 4.0),
 ]
+
+TRAINING_DATASET_URL = "https://platform.who.int/nutrition/malnutrition-database/database-search"
 
 
 def _round2(value: float) -> float:
@@ -271,6 +296,50 @@ def _summary(report: Report) -> str:
     )
 
 
+def _init_embedder():
+    if MobileNetV3Small is None:
+        return None
+    base = MobileNetV3Small(
+        include_top=False,
+        weights="imagenet",
+        input_shape=(224, 224, 3),
+        pooling="avg",
+    )
+    return base
+
+
+_embedder = _init_embedder()
+_face_cascade = cv2.CascadeClassifier(
+    str(Path(cv2.data.haarcascades) / "haarcascade_frontalface_default.xml"),
+)
+_masked_dir = Path(__file__).resolve().parent / "masked_images"
+_masked_dir.mkdir(parents=True, exist_ok=True)
+
+
+def _mask_face_bgr(image_bgr: np.ndarray) -> np.ndarray:
+    gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
+    faces = _face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5)
+    masked = image_bgr.copy()
+    for (x, y, w, h) in faces:
+        face_roi = masked[y : y + h, x : x + w]
+        if face_roi.size == 0:
+            continue
+        blurred = cv2.GaussianBlur(face_roi, (55, 55), 30)
+        masked[y : y + h, x : x + w] = blurred
+    return masked
+
+
+def _extract_embedding(masked_bgr: np.ndarray) -> np.ndarray:
+    if _embedder is None or tf is None or preprocess_input is None:
+        return np.zeros((576,), dtype=np.float32)
+    rgb = cv2.cvtColor(masked_bgr, cv2.COLOR_BGR2RGB)
+    resized = cv2.resize(rgb, (224, 224), interpolation=cv2.INTER_AREA)
+    batch = np.expand_dims(resized.astype(np.float32), axis=0)
+    batch = preprocess_input(batch)
+    emb = _embedder(batch, training=False).numpy().reshape(-1)
+    return emb.astype(np.float32)
+
+
 app = FastAPI(title="Dhatu-Scan Python Backend", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
@@ -287,6 +356,44 @@ _reports_lock = Lock()
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "backend-ok"}
+
+
+@app.get("/training-source")
+def training_source() -> dict[str, str]:
+    return {"datasetUrl": TRAINING_DATASET_URL}
+
+
+@app.post("/upload-image", response_model=UploadImageResponse)
+async def upload_image(
+    childId: str = Form(...),
+    mode: CaptureMode = Form(...),
+    phase: Literal["face", "body", "upload"] = Form(...),
+    image: UploadFile = File(...),
+) -> UploadImageResponse:
+    content = await image.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty file uploaded")
+
+    np_bytes = np.frombuffer(content, dtype=np.uint8)
+    decoded = cv2.imdecode(np_bytes, cv2.IMREAD_COLOR)
+    if decoded is None:
+        raise HTTPException(status_code=400, detail="Invalid image format")
+
+    masked = _mask_face_bgr(decoded)
+    embedding = _extract_embedding(masked)
+
+    masked_name = f"{childId}_{phase}_{uuid4().hex}.jpg"
+    masked_path = _masked_dir / masked_name
+    cv2.imwrite(str(masked_path), masked)
+
+    return UploadImageResponse(
+        success=True,
+        message="Image successfully uploaded",
+        mode=mode,
+        phase=phase,
+        maskedImagePath=str(masked_path),
+        embeddingDim=int(embedding.shape[0]),
+    )
 
 
 @app.post("/guidance", response_model=GuidanceResponse)

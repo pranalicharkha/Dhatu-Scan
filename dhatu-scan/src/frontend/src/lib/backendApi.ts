@@ -62,6 +62,13 @@ export interface BackendGuidanceResult {
   }>;
 }
 
+export interface UploadedImageResult {
+  success: boolean;
+  message: string;
+  maskedImagePath?: string | null;
+  embeddingDim: number;
+}
+
 function getBaseUrl(): string {
   const envUrl =
     import.meta.env.VITE_PY_BACKEND_URL ??
@@ -177,4 +184,27 @@ export async function evaluateCaptureGuidance(
       feetVisible: input.feetVisible,
     }),
   });
+}
+
+export async function uploadImageToBackend(params: {
+  childId: string;
+  mode: "live" | "upload";
+  phase: "face" | "body" | "upload";
+  file: File;
+}): Promise<UploadedImageResult> {
+  const formData = new FormData();
+  formData.append("childId", params.childId);
+  formData.append("mode", params.mode);
+  formData.append("phase", params.phase);
+  formData.append("image", params.file);
+
+  const response = await fetch(`${getBaseUrl()}/upload-image`, {
+    method: "POST",
+    body: formData,
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Upload failed (${response.status}): ${body}`);
+  }
+  return response.json() as Promise<UploadedImageResult>;
 }

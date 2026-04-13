@@ -2,6 +2,7 @@ import GlassCard from "@/components/GlassCard";
 import {
   evaluateCaptureGuidance,
   isBackendConfigured,
+  uploadImageToBackend,
 } from "@/lib/backendApi";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -14,9 +15,10 @@ import {
   Maximize2,
   MoveLeft,
   SkipForward,
+  Upload,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
 
 // ── Guidance tips ─────────────────────────────────────────────────────────────
 const TIPS = [
@@ -66,6 +68,7 @@ const STEPS = [
 
 type CaptureState = "idle" | "scanning" | "complete";
 type CapturePhase = "face" | "body" | "complete";
+type InputMode = "capture" | "upload";
 
 declare global {
   interface Window {
@@ -74,7 +77,7 @@ declare global {
     }) => {
       setOptions: (opts: Record<string, unknown>) => void;
       onResults: (cb: (results: { multiFaceLandmarks?: Array<Array<{ x: number; y: number; z?: number }>> }) => void) => void;
-      send: (payload: { image: HTMLVideoElement }) => Promise<void>;
+      send: (payload: { image: HTMLVideoElement | HTMLImageElement }) => Promise<void>;
       close?: () => void;
     };
     Pose?: new (config: {
@@ -82,7 +85,7 @@ declare global {
     }) => {
       setOptions: (opts: Record<string, unknown>) => void;
       onResults: (cb: (results: { poseLandmarks?: Array<{ x: number; y: number; visibility?: number }> }) => void) => void;
-      send: (payload: { image: HTMLVideoElement }) => Promise<void>;
+      send: (payload: { image: HTMLVideoElement | HTMLImageElement }) => Promise<void>;
       close?: () => void;
     };
   }
@@ -102,18 +105,20 @@ async function loadScript(src: string): Promise<void> {
   });
 }
 
+type LandmarkDetector = {
+  send: (payload: { image: HTMLVideoElement | HTMLImageElement }) => Promise<void>;
+  onResults: (cb: (results: any) => void) => void;
+  close?: () => void;
+};
+
 export default function Camera() {
   const navigate = useNavigate();
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const faceMeshRef = useRef<{
-    send: (payload: { image: HTMLVideoElement }) => Promise<void>;
-    close?: () => void;
-  } | null>(null);
-  const poseRef = useRef<{
-    send: (payload: { image: HTMLVideoElement }) => Promise<void>;
-    close?: () => void;
-  } | null>(null);
+  const faceMeshRef = useRef<LandmarkDetector | null>(null);
+  const poseRef = useRef<LandmarkDetector | null>(null);
+  const uploadFaceMeshRef = useRef<LandmarkDetector | null>(null);
+  const uploadPoseRef = useRef<LandmarkDetector | null>(null);
   const latestFaceLandmarksRef = useRef<Array<{ x: number; y: number; z?: number }>>([]);
   const latestPoseLandmarksRef = useRef<Array<{ x: number; y: number; visibility?: number }>>([]);
   const measureCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -121,6 +126,7 @@ export default function Camera() {
 
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState(false);
+  const [inputMode, setInputMode] = useState<InputMode>("capture");
   const [tipIndex, setTipIndex] = useState(0);
   const [liveTip, setLiveTip] = useState<string | null>(null);
   const [confidence, setConfidence] = useState(72);
@@ -136,6 +142,33 @@ export default function Camera() {
   );
   const [captureState, setCaptureState] = useState<CaptureState>("idle");
   const [scanProgress, setScanProgress] = useState(0);
+  const [uploadPreviewUrl, setUploadPreviewUrl] = useState<string | null>(null);
+  const [uploadConfirmMsg, setUploadConfirmMsg] = useState<string | null>(null);
+  const [uploadBodyDetectedCount, setUploadBodyDetectedCount] = useState(0);
+  const [uploadFaceDetectedCount, setUploadFaceDetectedCount] = useState(0);
+  const [uploadAnalyzing, setUploadAnalyzing] = useState(false);
+
+  useEffect(() => {
+    if (inputMode === "upload") {
+      setCaptureState("idle");
+      setCanCapture(false);
+      setLiveTip("Upload mode enabled.");
+      return;
+    }
+    setUploadConfirmMsg(null);
+    setUploadBodyDetectedCount(0);
+    setUploadFaceDetectedCount(0);
+    setLiveTip(null);
+  }, [inputMode]);
+
+  useEffect(() => {
+    return () => {
+      uploadFaceMeshRef.current?.close?.();
+      uploadPoseRef.current?.close?.();
+      uploadFaceMeshRef.current = null;
+      uploadPoseRef.current = null;
+    };
+  }, []);
 
   const captureFrame = useCallback((): string | null => {
     const video = videoRef.current;
@@ -156,6 +189,10 @@ export default function Camera() {
     let cancelled = false;
 
     async function startCamera() {
+      if (inputMode !== "capture") {
+        setCameraReady(false);
+        return;
+      }
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: "environment", aspectRatio: { ideal: 9 / 16 } },
@@ -185,11 +222,11 @@ export default function Camera() {
         streamRef.current = null;
       }
     };
-  }, []);
+  }, [inputMode]);
 
   // ── Real-time landmark guidance (MediaPipe Pose + FaceMesh) ────────────────
   useEffect(() => {
-    if (!cameraReady || !videoRef.current) {
+    if (inputMode !== "capture" || !cameraReady || !videoRef.current) {
       return;
     }
 
@@ -292,7 +329,7 @@ export default function Camera() {
         const bodyDetected = poseLandmarks.filter(
           (p) => (p.visibility ?? 1) > 0.4,
         ).length;
-        const faceDetected = faceLandmarks.length;
+        const faceDetected = Math.min(faceLandmarks.length, 468);
 
         const xs = poseLandmarks.map((p) => p.x);
         const ys = poseLandmarks.map((p) => p.y);
@@ -343,6 +380,8 @@ export default function Camera() {
           const guidance = await evaluateCaptureGuidance({
             bodyDetected,
             faceDetected,
+            bodyRequired: 33,
+            faceRequired: 0,
             fullBodyVisible,
             adequateLighting,
             centered,
@@ -385,7 +424,7 @@ export default function Camera() {
       faceMeshRef.current = null;
       poseRef.current = null;
     };
-  }, [cameraReady, capturePhase]);
+  }, [cameraReady, capturePhase, inputMode]);
 
   // ── Capture handler ─────────────────────────────────────────────────────────
   const handleCapture = useCallback(() => {
@@ -394,7 +433,7 @@ export default function Camera() {
     setScanProgress(0);
 
     const start = Date.now();
-    const duration = 3000;
+    const duration = 1500;
     const tick = () => {
       const elapsed = Date.now() - start;
       const pct = Math.min((elapsed / duration) * 100, 100);
@@ -427,6 +466,164 @@ export default function Camera() {
     requestAnimationFrame(tick);
   }, [captureState, canCapture, captureFrame, capturePhase]);
 
+  useEffect(() => {
+    if (
+      inputMode !== "capture" ||
+      !canCapture ||
+      captureState !== "idle" ||
+      capturePhase === "complete"
+    ) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      handleCapture();
+    }, 1100);
+    return () => clearTimeout(timer);
+  }, [canCapture, capturePhase, captureState, handleCapture, inputMode]);
+
+  const getUploadDetectors = useCallback(async () => {
+    await loadScript(
+      "https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js",
+    );
+    await loadScript("https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js");
+    if (!window.FaceMesh || !window.Pose) {
+      throw new Error("Landmark detector failed to load.");
+    }
+
+    if (!uploadFaceMeshRef.current) {
+      const faceMesh = new window.FaceMesh({
+        locateFile: (name) =>
+          `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${name}`,
+      });
+      faceMesh.setOptions({
+        maxNumFaces: 1,
+        refineLandmarks: false,
+        minDetectionConfidence: 0.45,
+        minTrackingConfidence: 0.45,
+      });
+      uploadFaceMeshRef.current = faceMesh;
+    }
+
+    if (!uploadPoseRef.current) {
+      const pose = new window.Pose({
+        locateFile: (name) =>
+          `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${name}`,
+      });
+      pose.setOptions({
+        modelComplexity: 0,
+        smoothLandmarks: true,
+        enableSegmentation: false,
+        minDetectionConfidence: 0.45,
+        minTrackingConfidence: 0.45,
+      });
+      uploadPoseRef.current = pose;
+    }
+
+    return {
+      faceMesh: uploadFaceMeshRef.current,
+      pose: uploadPoseRef.current,
+    };
+  }, []);
+
+  const analyzeUploadedImage = useCallback(
+    async (file: File) => {
+      const { faceMesh, pose } = await getUploadDetectors();
+      if (!faceMesh || !pose) {
+        throw new Error("Landmark detector failed to initialize.");
+      }
+
+      const objectUrl = URL.createObjectURL(file);
+      const image = new Image();
+      image.src = objectUrl;
+      await image.decode();
+
+      const maxSide = 720;
+      const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
+      let analysisImage: HTMLImageElement = image;
+      if (scale < 1) {
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(image.width * scale));
+        canvas.height = Math.max(1, Math.round(image.height * scale));
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          URL.revokeObjectURL(objectUrl);
+          throw new Error("Failed to prepare image for analysis.");
+        }
+        ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+        const resized = new Image();
+        resized.src = canvas.toDataURL("image/jpeg", 0.9);
+        await resized.decode();
+        analysisImage = resized;
+      }
+
+      let localFaceLandmarks: Array<{ x: number; y: number; z?: number }> = [];
+      let localPoseLandmarks: Array<{ x: number; y: number; visibility?: number }> = [];
+      faceMesh.onResults((results) => {
+        localFaceLandmarks = results.multiFaceLandmarks?.[0] ?? [];
+      });
+      pose.onResults((results) => {
+        localPoseLandmarks = results.poseLandmarks ?? [];
+      });
+
+      try {
+        await Promise.all([
+          pose.send({ image: analysisImage }),
+          faceMesh.send({ image: analysisImage }),
+        ]);
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+      }
+
+      const bodyDetected = localPoseLandmarks.filter(
+        (p) => (p.visibility ?? 1) > 0.4,
+      ).length;
+      const faceDetected = Math.min(localFaceLandmarks.length, 468);
+
+      return { bodyDetected, faceDetected };
+    },
+    [getUploadDetectors],
+  );
+
+  const handleUploadChange = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      event.target.value = "";
+      const localUrl = URL.createObjectURL(file);
+      setUploadPreviewUrl(localUrl);
+      setUploadConfirmMsg(null);
+      setUploadAnalyzing(true);
+
+      try {
+        const { bodyDetected, faceDetected } = await analyzeUploadedImage(file);
+        setUploadBodyDetectedCount(bodyDetected);
+        setUploadFaceDetectedCount(faceDetected);
+
+        if (faceDetected < 468 || bodyDetected < 33) {
+          setUploadConfirmMsg(
+            "Landmarks incomplete. Please upload another image with full face (468/468) and full body (33/33).",
+          );
+          return;
+        }
+
+        const result = await uploadImageToBackend({
+          childId: "upload_child",
+          mode: "upload",
+          phase: "upload",
+          file,
+        });
+        setUploadConfirmMsg(result.message);
+      } catch (error) {
+        setUploadConfirmMsg(
+          error instanceof Error ? error.message : "Upload failed",
+        );
+      } finally {
+        setUploadAnalyzing(false);
+      }
+    },
+    [analyzeUploadedImage],
+  );
+
   const goToForm = useCallback(() => {
     navigate({ to: "/form" });
   }, [navigate]);
@@ -444,6 +641,13 @@ export default function Camera() {
   const guidanceBadgeClasses = canCapture
     ? `${currentTip.bg} ${currentTip.color}`
     : "bg-red-500/20 border-red-400/40 text-red-300";
+  const uploadLandmarksComplete =
+    uploadFaceDetectedCount >= 468 && uploadBodyDetectedCount >= 33;
+  const uploadConfirmIsError =
+    !!uploadConfirmMsg &&
+    (uploadConfirmMsg.toLowerCase().includes("incomplete") ||
+      uploadConfirmMsg.toLowerCase().includes("failed") ||
+      uploadConfirmMsg.toLowerCase().includes("error"));
   const scanLineStyle = canCapture
     ? {
         background:
@@ -507,6 +711,32 @@ export default function Camera() {
         </div>
       </motion.div>
 
+      {/* Upload Mode Selector */}
+      <div className="w-full max-w-md mb-3 grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={() => setInputMode("capture")}
+          className={`rounded-xl border px-3 py-2 text-sm font-semibold transition-smooth ${
+            inputMode === "capture"
+              ? "bg-primary text-primary-foreground border-primary"
+              : "bg-white/5 text-muted-foreground border-white/15"
+          }`}
+        >
+          Capture
+        </button>
+        <button
+          type="button"
+          onClick={() => setInputMode("upload")}
+          className={`rounded-xl border px-3 py-2 text-sm font-semibold transition-smooth ${
+            inputMode === "upload"
+              ? "bg-primary text-primary-foreground border-primary"
+              : "bg-white/5 text-muted-foreground border-white/15"
+          }`}
+        >
+          Upload Image
+        </button>
+      </div>
+
       {/* ── Guidance tip ──────────────────────────────────────────────────── */}
       <div className="w-full max-w-md mb-3 h-10 flex items-center justify-center">
         <AnimatePresence mode="wait">
@@ -525,7 +755,11 @@ export default function Camera() {
       </div>
 
       {/* ── Camera viewport ───────────────────────────────────────────────── */}
-      <div className="w-full max-w-md relative">
+      <div
+        className={`w-full max-w-md relative ${
+          inputMode === "capture" ? "block" : "hidden"
+        }`}
+      >
         <div
           data-ocid="camera-viewport"
           className="relative rounded-2xl overflow-hidden border border-white/15"
@@ -663,7 +897,7 @@ export default function Camera() {
                 {capturePhase === "face"
                   ? "Capture locked: face close-up must reach 468/468 landmarks."
                   : capturePhase === "body"
-                    ? "Capture locked: full body must satisfy all 33 body and 468 face landmarks."
+                    ? "Capture locked: full body must satisfy all 33 body landmarks."
                     : "Capture locked: both phases already completed."}
               </p>
             )}
@@ -828,6 +1062,9 @@ export default function Camera() {
             </motion.button>
 
             <span className="text-xs text-muted-foreground font-medium">
+              <span className="block text-red-300 font-semibold mb-1">
+                click here to capture image
+              </span>
               {captureState === "idle" &&
                 (capturePhase === "face"
                   ? canCapture
@@ -882,6 +1119,92 @@ export default function Camera() {
           </button>
         </GlassCard>
       </div>
+
+      {inputMode === "upload" && (
+        <GlassCard
+          variant="elevated"
+          className="w-full max-w-md p-4 flex flex-col items-center gap-4"
+        >
+          <div className="w-full rounded-xl border border-white/15 bg-background/40 p-4 text-center">
+            <Upload className="w-8 h-8 mx-auto text-primary mb-2" />
+            <p className="text-sm font-semibold text-foreground">
+              Upload Child Image
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Camera capture is locked while upload mode is selected.
+            </p>
+          </div>
+
+          <label
+            className={`w-full rounded-xl border border-primary/40 bg-primary/10 px-4 py-3 text-center text-sm font-semibold text-primary transition-smooth ${
+              uploadAnalyzing ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-primary/20"
+            }`}
+          >
+            {uploadAnalyzing ? "Analyzing image..." : "Select Image From Device"}
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleUploadChange}
+              disabled={uploadAnalyzing}
+            />
+          </label>
+
+          <div className="w-full rounded-xl border border-white/15 bg-background/40 px-3 py-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className={uploadBodyDetectedCount >= 33 ? "text-emerald-300" : "text-red-300"}>
+                Body landmarks: {uploadBodyDetectedCount}/33
+              </span>
+              <span className={uploadFaceDetectedCount >= 468 ? "text-emerald-300" : "text-red-300"}>
+                Face landmarks: {uploadFaceDetectedCount}/468
+              </span>
+            </div>
+            <p className={`mt-1 text-[11px] font-semibold ${uploadLandmarksComplete ? "text-emerald-300" : "text-red-300"}`}>
+              {uploadLandmarksComplete
+                ? "All required landmarks detected."
+                : "All landmarks not detected. Please upload another image."}
+            </p>
+            {uploadAnalyzing && (
+              <p className="mt-1 text-[11px] font-medium text-yellow-300">
+                Analyzing landmarks, please wait...
+              </p>
+            )}
+          </div>
+
+          {uploadPreviewUrl && (
+            <div className="w-full rounded-xl border border-white/15 bg-background/40 p-2">
+              <img
+                src={uploadPreviewUrl}
+                alt="Uploaded preview"
+                className="w-full h-56 object-cover rounded-lg"
+              />
+            </div>
+          )}
+
+          {uploadConfirmMsg && (
+            <p
+              className={`w-full rounded-lg px-3 py-2 text-xs font-semibold text-center ${
+                uploadConfirmIsError
+                  ? "border border-red-400/40 bg-red-400/10 text-red-300"
+                  : "border border-emerald-400/40 bg-emerald-400/10 text-emerald-300"
+              }`}
+            >
+              {uploadConfirmMsg}
+            </p>
+          )}
+
+          <button
+            type="button"
+            onClick={goToForm}
+            className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold gradient-teal text-primary-foreground"
+          >
+            Continue
+          </button>
+        </GlassCard>
+      )}
     </div>
   );
 }
+
+
+
