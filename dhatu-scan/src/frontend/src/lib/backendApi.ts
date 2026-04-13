@@ -23,6 +23,8 @@ export interface BackendAssessmentInput {
   modelName?: string;
   modelConfidence?: number;
   embeddingRiskHint?: number;
+  qualityScore?: number;
+  visibleSigns?: string[];
 }
 
 export interface BackendAssessmentResult {
@@ -151,6 +153,8 @@ export async function submitAssessmentToBackend(
         modelName: input.modelName ?? "python-backend",
         modelConfidence: input.modelConfidence ?? 0.0,
         embeddingRiskHint: input.embeddingRiskHint ?? null,
+        qualityScore: input.qualityScore ?? null,
+        visibleSigns: input.visibleSigns ?? [],
       },
       originalImage: null,
       maskedImage: null,

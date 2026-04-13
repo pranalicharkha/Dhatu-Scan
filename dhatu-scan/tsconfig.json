@@ -7,5 +7,13 @@
     "moduleResolution": "node",
     "allowJs": true,
     "outDir": "HACK_BECAUSE_OF_ALLOW_JS"
-  }
+  },
+  "include": [
+    "src/frontend/src/declarations/backend.did.js"
+  ],
+  "exclude": [
+    "HACK_BECAUSE_OF_ALLOW_JS",
+    "src/frontend/node_modules",
+    "src/frontend/dist"
+  ]
 }

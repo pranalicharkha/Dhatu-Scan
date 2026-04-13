@@ -1,9 +1,15 @@
 import GlassCard from "@/components/GlassCard";
 import {
+  clearCameraAnalysisSession,
+  saveCameraAnalysisSession,
+  type CameraAnalysisSession,
+} from "@/lib/cameraAnalysisSession";
+import {
   evaluateCaptureGuidance,
   isBackendConfigured,
   uploadImageToBackend,
 } from "@/lib/backendApi";
+import { preprocessAndAnalyzeImage } from "@/lib/mlImagePipeline";
 import { useNavigate } from "@tanstack/react-router";
 import {
   AlignCenter,
@@ -14,7 +20,6 @@ import {
   Lock,
   Maximize2,
   MoveLeft,
-  SkipForward,
   Upload,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
@@ -121,6 +126,9 @@ export default function Camera() {
   const uploadPoseRef = useRef<LandmarkDetector | null>(null);
   const latestFaceLandmarksRef = useRef<Array<{ x: number; y: number; z?: number }>>([]);
   const latestPoseLandmarksRef = useRef<Array<{ x: number; y: number; visibility?: number }>>([]);
+  const faceCaptureLandmarksRef = useRef<Array<{ x: number; y: number; z?: number }>>([]);
+  const bodyCaptureFaceLandmarksRef = useRef<Array<{ x: number; y: number; z?: number }>>([]);
+  const bodyCapturePoseLandmarksRef = useRef<Array<{ x: number; y: number; visibility?: number }>>([]);
   const measureCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const inferenceBusyRef = useRef(false);
 
@@ -147,18 +155,26 @@ export default function Camera() {
   const [uploadBodyDetectedCount, setUploadBodyDetectedCount] = useState(0);
   const [uploadFaceDetectedCount, setUploadFaceDetectedCount] = useState(0);
   const [uploadAnalyzing, setUploadAnalyzing] = useState(false);
+  const [sessionReady, setSessionReady] = useState(false);
+  const [processedSession, setProcessedSession] = useState<CameraAnalysisSession | null>(null);
 
   useEffect(() => {
     if (inputMode === "upload") {
       setCaptureState("idle");
       setCanCapture(false);
       setLiveTip("Upload mode enabled.");
+      setSessionReady(false);
+      setProcessedSession(null);
+      clearCameraAnalysisSession();
       return;
     }
     setUploadConfirmMsg(null);
     setUploadBodyDetectedCount(0);
     setUploadFaceDetectedCount(0);
     setLiveTip(null);
+    setSessionReady(false);
+    setProcessedSession(null);
+    clearCameraAnalysisSession();
   }, [inputMode]);
 
   useEffect(() => {
@@ -183,6 +199,48 @@ export default function Camera() {
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     return canvas.toDataURL("image/jpeg", 0.92);
   }, []);
+
+  const persistProcessedSession = useCallback((session: CameraAnalysisSession) => {
+    saveCameraAnalysisSession(session);
+    setProcessedSession(session);
+    setSessionReady(true);
+  }, []);
+
+  const processCapturedImage = useCallback(
+    async (
+      rawImageDataUrl: string,
+      faceLandmarks: Array<{ x: number; y: number; z?: number }>,
+      poseLandmarks: Array<{ x: number; y: number; visibility?: number }>,
+      faceDetected: number,
+      bodyDetected: number,
+      mode: "live" | "upload",
+    ) => {
+      const mlResult = await preprocessAndAnalyzeImage({
+        sourceDataUrl: rawImageDataUrl,
+        faceLandmarks,
+        poseLandmarks,
+      });
+
+      const session: CameraAnalysisSession = {
+        ready: true,
+        mode,
+        processedImageDataUrl: mlResult.processedImageDataUrl,
+        maskedImageDataUrl: mlResult.maskedImageDataUrl,
+        bodyLandmarksDetected: bodyDetected,
+        faceLandmarksDetected: faceDetected,
+        faceMasked: mlResult.faceMasked,
+        modelName: mlResult.modelName,
+        modelConfidence: mlResult.modelConfidence,
+        imageRiskScore: mlResult.imageRiskScore,
+        qualityScore: mlResult.qualityScore,
+        visibleSigns: mlResult.visibleSigns,
+      };
+
+      persistProcessedSession(session);
+      return session;
+    },
+    [persistProcessedSession],
+  );
 
   // ── Camera init ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -429,6 +487,9 @@ export default function Camera() {
   // ── Capture handler ─────────────────────────────────────────────────────────
   const handleCapture = useCallback(() => {
     if (captureState !== "idle" || !canCapture) return;
+    setSessionReady(false);
+    setProcessedSession(null);
+    clearCameraAnalysisSession();
     setCaptureState("scanning");
     setScanProgress(0);
 
@@ -443,7 +504,10 @@ export default function Camera() {
       } else {
         const image = captureFrame();
         if (capturePhase === "face") {
-          if (image) setFaceCaptureDataUrl(image);
+          if (image) {
+            setFaceCaptureDataUrl(image);
+            faceCaptureLandmarksRef.current = [...latestFaceLandmarksRef.current];
+          }
           setCapturePhase("body");
           setCaptureState("idle");
           setCanCapture(false);
@@ -453,18 +517,48 @@ export default function Camera() {
           return;
         }
         if (capturePhase === "body") {
-          if (image) setBodyCaptureDataUrl(image);
-          setCapturePhase("complete");
-          setCaptureState("complete");
-          setCanCapture(false);
-          setLiveTip("Face and body images captured successfully.");
+          if (!image) {
+            setCaptureState("idle");
+            setLiveTip("Capture failed. Please try again.");
+            return;
+          }
+          setBodyCaptureDataUrl(image);
+          bodyCaptureFaceLandmarksRef.current = [...latestFaceLandmarksRef.current];
+          bodyCapturePoseLandmarksRef.current = [...latestPoseLandmarksRef.current];
+          void processCapturedImage(
+            image,
+            bodyCaptureFaceLandmarksRef.current,
+            bodyCapturePoseLandmarksRef.current,
+            Math.min(bodyCaptureFaceLandmarksRef.current.length, 468),
+            bodyCapturePoseLandmarksRef.current.filter(
+              (point) => (point.visibility ?? 1) > 0.4,
+            ).length,
+            "live",
+          )
+            .then((session) => {
+              setFaceCaptureDataUrl(null);
+              setBodyCaptureDataUrl(session.processedImageDataUrl);
+              setCapturePhase("complete");
+              setCaptureState("complete");
+              setCanCapture(false);
+              setLiveTip("Face and body images processed successfully.");
+            })
+            .catch((error) => {
+              setCaptureState("idle");
+              setCapturePhase("body");
+              setLiveTip(
+                error instanceof Error
+                  ? error.message
+                  : "Image processing failed. Please capture again.",
+              );
+            });
           return;
         }
         setCaptureState("complete");
       }
     };
     requestAnimationFrame(tick);
-  }, [captureState, canCapture, captureFrame, capturePhase]);
+  }, [captureState, canCapture, captureFrame, capturePhase, processCapturedImage]);
 
   useEffect(() => {
     if (
@@ -540,6 +634,7 @@ export default function Camera() {
       const maxSide = 720;
       const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
       let analysisImage: HTMLImageElement = image;
+      let analysisDataUrl = objectUrl;
       if (scale < 1) {
         const canvas = document.createElement("canvas");
         canvas.width = Math.max(1, Math.round(image.width * scale));
@@ -551,9 +646,21 @@ export default function Camera() {
         }
         ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
         const resized = new Image();
-        resized.src = canvas.toDataURL("image/jpeg", 0.9);
+        analysisDataUrl = canvas.toDataURL("image/jpeg", 0.9);
+        resized.src = analysisDataUrl;
         await resized.decode();
         analysisImage = resized;
+      } else {
+        const canvas = document.createElement("canvas");
+        canvas.width = image.width;
+        canvas.height = image.height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          URL.revokeObjectURL(objectUrl);
+          throw new Error("Failed to prepare image for analysis.");
+        }
+        ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+        analysisDataUrl = canvas.toDataURL("image/jpeg", 0.92);
       }
 
       let localFaceLandmarks: Array<{ x: number; y: number; z?: number }> = [];
@@ -579,7 +686,13 @@ export default function Camera() {
       ).length;
       const faceDetected = Math.min(localFaceLandmarks.length, 468);
 
-      return { bodyDetected, faceDetected };
+      return {
+        bodyDetected,
+        faceDetected,
+        faceLandmarks: localFaceLandmarks,
+        poseLandmarks: localPoseLandmarks,
+        analysisDataUrl,
+      };
     },
     [getUploadDetectors],
   );
@@ -590,43 +703,80 @@ export default function Camera() {
       if (!file) return;
       event.target.value = "";
       const localUrl = URL.createObjectURL(file);
-      setUploadPreviewUrl(localUrl);
+      setUploadPreviewUrl(null);
       setUploadConfirmMsg(null);
       setUploadAnalyzing(true);
+      setSessionReady(false);
+      setProcessedSession(null);
+      clearCameraAnalysisSession();
 
       try {
-        const { bodyDetected, faceDetected } = await analyzeUploadedImage(file);
+        const {
+          bodyDetected,
+          faceDetected,
+          faceLandmarks,
+          poseLandmarks,
+          analysisDataUrl,
+        } = await analyzeUploadedImage(file);
         setUploadBodyDetectedCount(bodyDetected);
         setUploadFaceDetectedCount(faceDetected);
 
         if (faceDetected < 468 || bodyDetected < 33) {
+          URL.revokeObjectURL(localUrl);
           setUploadConfirmMsg(
             "Landmarks incomplete. Please upload another image with full face (468/468) and full body (33/33).",
           );
           return;
         }
 
+        const session = await processCapturedImage(
+          analysisDataUrl,
+          faceLandmarks,
+          poseLandmarks,
+          faceDetected,
+          bodyDetected,
+          "upload",
+        );
+        setUploadPreviewUrl(session.processedImageDataUrl);
+
         const result = await uploadImageToBackend({
           childId: "upload_child",
           mode: "upload",
           phase: "upload",
-          file,
+          file: new File(
+            [await (await fetch(session.processedImageDataUrl)).blob()],
+            "processed-upload.jpg",
+            { type: "image/jpeg" },
+          ),
         });
         setUploadConfirmMsg(result.message);
       } catch (error) {
+        const message =
+          error instanceof Error ? error.message.toLowerCase() : "";
         setUploadConfirmMsg(
-          error instanceof Error ? error.message : "Upload failed",
+          message.includes("module.arguments") ||
+            message.includes("aborted(") ||
+            message.includes("opencv")
+            ? "Image preprocessing failed to initialize. Please refresh once and try the upload again."
+            : error instanceof Error
+              ? error.message
+              : "Upload failed",
         );
       } finally {
+        URL.revokeObjectURL(localUrl);
         setUploadAnalyzing(false);
       }
     },
-    [analyzeUploadedImage],
+    [analyzeUploadedImage, processCapturedImage],
   );
 
   const goToForm = useCallback(() => {
+    if (!sessionReady) {
+      setLiveTip("You can continue only after all required landmarks are detected.");
+      return;
+    }
     navigate({ to: "/form" });
-  }, [navigate]);
+  }, [navigate, sessionReady]);
 
   const currentTip = TIPS[tipIndex];
   const TipIcon = currentTip.icon;
@@ -647,7 +797,9 @@ export default function Camera() {
     !!uploadConfirmMsg &&
     (uploadConfirmMsg.toLowerCase().includes("incomplete") ||
       uploadConfirmMsg.toLowerCase().includes("failed") ||
-      uploadConfirmMsg.toLowerCase().includes("error"));
+      uploadConfirmMsg.toLowerCase().includes("error") ||
+      uploadConfirmMsg.toLowerCase().includes("aborted") ||
+      uploadConfirmMsg.toLowerCase().includes("refresh"));
   const scanLineStyle = canCapture
     ? {
         background:
@@ -1017,9 +1169,14 @@ export default function Camera() {
                   whileHover={{ scale: 1.04 }}
                   whileTap={{ scale: 0.97 }}
                   onClick={goToForm}
-                  className="px-6 py-2.5 rounded-full gradient-teal text-primary-foreground font-semibold text-sm shadow-lg"
+                  disabled={!sessionReady}
+                  className={`px-6 py-2.5 rounded-full font-semibold text-sm shadow-lg ${
+                    sessionReady
+                      ? "gradient-teal text-primary-foreground"
+                      : "bg-white/10 text-muted-foreground cursor-not-allowed"
+                  }`}
                 >
-                  Continue to Details →
+                  {sessionReady ? "Continue to Details →" : "Finalizing Analysis..."}
                 </motion.button>
               </motion.div>
             )}
@@ -1107,16 +1264,10 @@ export default function Camera() {
             </div>
           </div>
 
-          {/* Skip option */}
-          <button
-            type="button"
-            data-ocid="skip-camera-btn"
-            onClick={goToForm}
-            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-smooth focus-visible:outline-none focus-visible:underline"
-          >
-            <SkipForward className="w-3.5 h-3.5" />
-            Skip Camera / Enter Details Manually
-          </button>
+          <p className="text-center text-xs font-medium text-muted-foreground">
+            Continue stays locked until image analysis, face masking, and full
+            landmark detection are complete.
+          </p>
         </GlassCard>
       </div>
 
@@ -1136,8 +1287,8 @@ export default function Camera() {
           </div>
 
           <label
-            className={`w-full rounded-xl border border-primary/40 bg-primary/10 px-4 py-3 text-center text-sm font-semibold text-primary transition-smooth ${
-              uploadAnalyzing ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-primary/20"
+            className={`w-full rounded-xl border border-white/15 bg-background/40 px-4 py-3 text-center text-sm font-semibold text-foreground/90 transition-smooth ${
+              uploadAnalyzing ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-background/60"
             }`}
           >
             {uploadAnalyzing ? "Analyzing image..." : "Select Image From Device"}
@@ -1196,9 +1347,14 @@ export default function Camera() {
           <button
             type="button"
             onClick={goToForm}
-            className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold gradient-teal text-primary-foreground"
+            disabled={!uploadLandmarksComplete || !sessionReady || uploadAnalyzing}
+            className={`w-full rounded-xl px-4 py-2.5 text-sm font-semibold ${
+              uploadLandmarksComplete && sessionReady && !uploadAnalyzing
+                ? "gradient-teal text-primary-foreground"
+                : "border border-white/15 bg-white/5 text-muted-foreground cursor-not-allowed"
+            }`}
           >
-            Continue
+            {uploadLandmarksComplete && sessionReady ? "Continue" : "Continue Locked"}
           </button>
         </GlassCard>
       )}

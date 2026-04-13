@@ -1,11 +1,14 @@
 import GlassCard from "@/components/GlassCard";
 import { useApp } from "@/context/AppContext";
+import { getCameraAnalysisSession } from "@/lib/cameraAnalysisSession";
 import type { Assessment, WaterSourceType } from "@/types/index";
 import { isBackendConfigured, submitAssessmentToBackend } from "@/lib/backendApi";
 import {
   calculateBMI,
   calculateDietaryScore,
   calculateFinalScore,
+  calculateImageRiskScore,
+  calculateIntegratedRiskScore,
   calculateWHOZScore,
   calculateWastingScore,
   getRiskCategory,
@@ -125,6 +128,7 @@ export default function Form() {
     {},
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const cameraSession = getCameraAnalysisSession();
 
   const ageMonths = useMemo(() => {
     if (!activeChild) return 0;
@@ -171,6 +175,7 @@ export default function Form() {
 
   async function handleSubmit() {
     if (!activeChild) return;
+    if (!cameraSession?.ready) return;
 
     setIsSubmitting(true);
 
@@ -210,12 +215,15 @@ export default function Form() {
             recentDiarrhea: form.recentDiarrhea,
             diarrheaFrequency: form.recentDiarrhea ? 10 : 0,
             breastfed: form.breastfed,
-            captureMode: "upload",
-            bodyLandmarksDetected: 0,
-            faceLandmarksDetected: 0,
-            faceMasked: false,
-            modelName: "frontend-form",
-            modelConfidence: 0.75,
+            captureMode: cameraSession.mode,
+            bodyLandmarksDetected: cameraSession.bodyLandmarksDetected,
+            faceLandmarksDetected: cameraSession.faceLandmarksDetected,
+            faceMasked: cameraSession.faceMasked,
+            modelName: cameraSession.modelName,
+            modelConfidence: cameraSession.modelConfidence / 100,
+            embeddingRiskHint: cameraSession.imageRiskScore / 100,
+            qualityScore: cameraSession.qualityScore,
+            visibleSigns: cameraSession.visibleSigns,
           });
 
           wastingScore = backendResult.scores.wastingScore;
@@ -238,7 +246,17 @@ export default function Form() {
           waterScore,
           diarrheaScore,
         );
-        finalScore = calculateFinalScore(wastingScore, dietaryScore);
+        const imageRiskScore = calculateImageRiskScore(
+          cameraSession.imageRiskScore,
+          cameraSession.qualityScore,
+          cameraSession.faceLandmarksDetected,
+          cameraSession.bodyLandmarksDetected,
+        );
+        finalScore = calculateIntegratedRiskScore(
+          wastingScore,
+          dietaryScore,
+          imageRiskScore,
+        );
         riskLevel = getRiskCategory(finalScore).level;
         const whoResult = calculateWHOZScore(
           height,
@@ -288,7 +306,15 @@ export default function Form() {
         dietDiversity: form.dietDiversity,
         waterSource: waterScore,
         recentDiarrhea: diarrheaScore,
-        cameraAnalyzed: false,
+        cameraAnalyzed: true,
+        cameraConfidence: cameraSession.modelConfidence,
+        imageRiskScore: cameraSession.imageRiskScore,
+        imageQualityScore: cameraSession.qualityScore,
+        imageModelName: cameraSession.modelName,
+        imageVisibleSigns: cameraSession.visibleSigns,
+        bodyLandmarksDetected: cameraSession.bodyLandmarksDetected,
+        faceLandmarksDetected: cameraSession.faceLandmarksDetected,
+        faceMasked: cameraSession.faceMasked,
         notes: form.medicalConditions || undefined,
       });
 
@@ -343,6 +369,33 @@ export default function Form() {
               className="mt-6 inline-flex rounded-full border border-primary/25 bg-primary/10 px-5 py-2.5 text-sm font-semibold text-primary transition-smooth hover:bg-primary/15"
             >
               Open Child Profiles
+            </Link>
+          </GlassCard>
+        </div>
+      </div>
+    );
+  }
+
+  if (!cameraSession?.ready) {
+    return (
+      <div className="min-h-screen px-4 py-8 sm:px-6 lg:px-10">
+        <div className="mx-auto max-w-3xl">
+          <GlassCard variant="elevated" className="rounded-[2rem] p-8 text-center">
+            <p className="text-sm uppercase tracking-[0.22em] text-primary">
+              Camera Required
+            </p>
+            <h1 className="mt-4 font-display text-4xl font-bold text-foreground">
+              Complete image analysis before screening.
+            </h1>
+            <p className="mt-4 text-base leading-7 text-muted-foreground">
+              The form is locked until the child image reaches complete face and
+              body landmark detection and the processed image is generated.
+            </p>
+            <Link
+              to="/camera"
+              className="mt-6 inline-flex rounded-full border border-primary/25 bg-primary/10 px-5 py-2.5 text-sm font-semibold text-primary transition-smooth hover:bg-primary/15"
+            >
+              Return To Camera
             </Link>
           </GlassCard>
         </div>
