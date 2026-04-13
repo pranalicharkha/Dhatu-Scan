@@ -226,6 +226,35 @@ export function calculateFinalScore(
   return Math.max(0, Math.min(100, score));
 }
 
+export function calculateImageRiskScore(
+  imageRiskScore: number,
+  qualityScore: number,
+  faceLandmarksDetected: number,
+  bodyLandmarksDetected: number,
+): number {
+  const imageSignal = imageRiskScore * 0.7;
+  const qualityPenalty = (100 - qualityScore) * 0.15;
+  const facePenalty =
+    ((468 - Math.min(faceLandmarksDetected, 468)) / 468) * 7.5;
+  const bodyPenalty =
+    ((33 - Math.min(bodyLandmarksDetected, 33)) / 33) * 7.5;
+  return Math.max(
+    0,
+    Math.min(100, Math.round(imageSignal + qualityPenalty + facePenalty + bodyPenalty)),
+  );
+}
+
+export function calculateIntegratedRiskScore(
+  wastingScore: number,
+  dietaryScore: number,
+  imageRiskScore: number,
+): number {
+  return Math.max(
+    0,
+    Math.min(100, Math.round(wastingScore * 0.55 + dietaryScore * 0.2 + imageRiskScore * 0.25)),
+  );
+}
+
 export function getRiskCategory(score: number): RiskCategory {
   if (score <= 30) {
     return {

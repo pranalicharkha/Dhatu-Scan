@@ -1,0 +1,39 @@
+# 🔹 Virtual Environment (VERY IMPORTANT)
+tfenv/
+venv/
+env/
+
+# 🔹 Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 🔹 Logs
+*.log
+
+# 🔹 Environment variables (secrets)
+.env
+
+# 🔹 VS Code / IDE files
+.vscode/
+.idea/
+
+# 🔹 OS files
+.DS_Store
+Thumbs.db
+
+# 🔹 Build / dist files
+build/
+dist/
+*.egg-info/
+
+# 🔹 Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# 🔹 TensorFlow / ML temporary files
+*.h5
+*.pb
+
+# 🔹 Node modules (if you have frontend)
+node_modules/

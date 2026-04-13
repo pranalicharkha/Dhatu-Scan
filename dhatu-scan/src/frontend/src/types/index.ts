@@ -64,6 +64,13 @@ export interface Assessment {
   // Camera
   cameraAnalyzed: boolean;
   cameraConfidence?: number; // 0-100
+  imageRiskScore?: number; // 0-100
+  imageQualityScore?: number; // 0-100
+  imageModelName?: string;
+  imageVisibleSigns?: string[];
+  bodyLandmarksDetected?: number;
+  faceLandmarksDetected?: number;
+  faceMasked?: boolean;
   // Notes
   notes?: string;
 }
