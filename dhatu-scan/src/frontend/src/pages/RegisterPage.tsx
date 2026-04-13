@@ -101,21 +101,13 @@ export default function RegisterPage() {
                 boxShadow: "0 24px 80px rgba(82, 69, 109, 0.12)",
               }}
             >
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm uppercase tracking-[0.22em]" style={{ color: PALETTE.muted }}>
-                    New Account
-                  </p>
-                  <h2 className="mt-2 font-display text-3xl font-semibold">
-                    Register for Dhatu-Scan
-                  </h2>
-                </div>
-                <div
-                  className="flex h-14 w-14 items-center justify-center rounded-2xl text-xl font-bold"
-                  style={{ backgroundColor: PALETTE.blue, color: PALETTE.ink }}
-                >
-                  +
-                </div>
+              <div>
+                <p className="text-sm uppercase tracking-[0.22em]" style={{ color: PALETTE.muted }}>
+                  New Account
+                </p>
+                <h2 className="mt-2 font-display text-3xl font-semibold">
+                  Register for Dhatu-Scan
+                </h2>
               </div>
 
               <div className="mt-8 space-y-4">

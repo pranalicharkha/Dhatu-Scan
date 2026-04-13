@@ -97,8 +97,16 @@
   }
 
   html {
-    color-scheme: dark;
     scroll-behavior: smooth;
+  }
+
+  html,
+  :root {
+    color-scheme: light;
+  }
+
+  .dark {
+    color-scheme: dark;
   }
 
   body {

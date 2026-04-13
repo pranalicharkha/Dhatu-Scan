@@ -1,5 +1,14 @@
-import { Link, useLocation } from "@tanstack/react-router";
-import { Activity, ClipboardList, Home, Shield, Star } from "lucide-react";
+import { useApp } from "@/context/AppContext";
+import ThemeToggle from "./ThemeToggle";
+import { Link, useLocation, useNavigate } from "@tanstack/react-router";
+import {
+  Activity,
+  ClipboardList,
+  Home,
+  LogOut,
+  Shield,
+  Star,
+} from "lucide-react";
 import { motion } from "motion/react";
 import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
@@ -20,6 +29,13 @@ const NAV_ITEMS: NavItem[] = [
 
 export default function BottomNav() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { signOut } = useApp();
+
+  const handleLogout = async () => {
+    signOut();
+    await navigate({ to: "/" });
+  };
 
   return (
     <nav
@@ -60,6 +76,22 @@ export default function BottomNav() {
               </Link>
             );
           })}
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="relative flex min-h-[44px] min-w-[44px] flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-muted-foreground transition-smooth hover:text-foreground"
+          >
+            <span className="relative z-10">
+              <LogOut size={20} />
+            </span>
+            <span className="relative z-10 text-[10px] font-medium leading-none">
+              Logout
+            </span>
+          </button>
+          <div className="flex min-h-[44px] min-w-[44px] flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-muted-foreground">
+            <ThemeToggle compact />
+            <span className="text-[10px] font-medium leading-none">Theme</span>
+          </div>
         </div>
       </div>
     </nav>
