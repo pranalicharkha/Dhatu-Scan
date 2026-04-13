@@ -1,3 +1,4 @@
+import whoGrowthTables from "../data/whoGrowthTables.json";
 import type {
   Assessment,
   GamificationState,
@@ -10,113 +11,165 @@ import type {
   WaterSourceType,
 } from "../types";
 
-// WHO Reference medians (simplified) for height-for-age and weight-for-age
-// Z-score = (observed - median) / SD
-const WHO_MEDIANS: Record<
-  string,
-  {
-    wfa_m: number;
-    wfa_f: number;
-    hfa_m: number;
-    hfa_f: number;
-    sd_w: number;
-    sd_h: number;
-  }
-> = {
-  "0": {
-    wfa_m: 3.3,
-    wfa_f: 3.2,
-    hfa_m: 49.9,
-    hfa_f: 49.1,
-    sd_w: 0.39,
-    sd_h: 1.9,
-  },
-  "6": {
-    wfa_m: 7.9,
-    wfa_f: 7.3,
-    hfa_m: 67.6,
-    hfa_f: 65.7,
-    sd_w: 0.78,
-    sd_h: 2.4,
-  },
-  "12": {
-    wfa_m: 9.6,
-    wfa_f: 8.9,
-    hfa_m: 75.7,
-    hfa_f: 74.0,
-    sd_w: 0.94,
-    sd_h: 2.7,
-  },
-  "18": {
-    wfa_m: 10.9,
-    wfa_f: 10.2,
-    hfa_m: 82.3,
-    hfa_f: 80.7,
-    sd_w: 1.06,
-    sd_h: 2.9,
-  },
-  "24": {
-    wfa_m: 12.2,
-    wfa_f: 11.5,
-    hfa_m: 87.8,
-    hfa_f: 86.4,
-    sd_w: 1.18,
-    sd_h: 3.1,
-  },
-  "36": {
-    wfa_m: 14.3,
-    wfa_f: 13.9,
-    hfa_m: 96.1,
-    hfa_f: 95.1,
-    sd_w: 1.4,
-    sd_h: 3.5,
-  },
-  "48": {
-    wfa_m: 16.3,
-    wfa_f: 15.9,
-    hfa_m: 103.3,
-    hfa_f: 102.7,
-    sd_w: 1.6,
-    sd_h: 3.8,
-  },
-  "60": {
-    wfa_m: 18.3,
-    wfa_f: 17.7,
-    hfa_m: 110.0,
-    hfa_f: 109.4,
-    sd_w: 1.8,
-    sd_h: 4.0,
-  },
+type WHOIndexedRow = {
+  ageMonths?: number;
+  sizeCm?: number;
+  l: number;
+  m: number;
+  s: number;
 };
 
-function getWHOReference(ageMonths: number, gender: Gender) {
-  const keys = Object.keys(WHO_MEDIANS)
-    .map(Number)
-    .sort((a, b) => a - b);
-  let lower = keys[0];
-  let upper = keys[keys.length - 1];
-  for (let i = 0; i < keys.length - 1; i++) {
-    if (ageMonths >= keys[i] && ageMonths <= keys[i + 1]) {
-      lower = keys[i];
-      upper = keys[i + 1];
-      break;
+type TableBySex = {
+  male: WHOIndexedRow[];
+  female: WHOIndexedRow[];
+};
+
+type AgeSplitTableBySex = {
+  male: {
+    "0_24": WHOIndexedRow[];
+    "24_60": WHOIndexedRow[];
+  };
+  female: {
+    "0_24": WHOIndexedRow[];
+    "24_60": WHOIndexedRow[];
+  };
+};
+
+const WHO_TABLES = whoGrowthTables as {
+  wfa: TableBySex;
+  wfl: TableBySex;
+  wfh: TableBySex;
+  lhfa: AgeSplitTableBySex;
+  bfa: AgeSplitTableBySex;
+};
+
+function normalizeGender(gender: Gender): "male" | "female" {
+  return gender === "female" ? "female" : "male";
+}
+
+function interpolateRow(
+  value: number,
+  rows: WHOIndexedRow[],
+  key: "ageMonths" | "sizeCm",
+): WHOIndexedRow {
+  const sorted = [...rows].sort((a, b) => (a[key] ?? 0) - (b[key] ?? 0));
+
+  if (value <= (sorted[0][key] ?? 0)) return sorted[0];
+  if (value >= (sorted[sorted.length - 1][key] ?? 0)) {
+    return sorted[sorted.length - 1];
+  }
+
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const lower = sorted[i];
+    const upper = sorted[i + 1];
+    const lowerValue = lower[key] ?? 0;
+    const upperValue = upper[key] ?? 0;
+
+    if (value >= lowerValue && value <= upperValue) {
+      if (upperValue === lowerValue) return lower;
+      const t = (value - lowerValue) / (upperValue - lowerValue);
+      return {
+        [key]: value,
+        l: lower.l + t * (upper.l - lower.l),
+        m: lower.m + t * (upper.m - lower.m),
+        s: lower.s + t * (upper.s - lower.s),
+      };
     }
   }
-  const lowerRef = WHO_MEDIANS[lower.toString()];
-  const upperRef = WHO_MEDIANS[upper.toString()];
-  const t = upper === lower ? 0 : (ageMonths - lower) / (upper - lower);
-  return {
-    wfa:
-      gender === "female"
-        ? lowerRef.wfa_f + t * (upperRef.wfa_f - lowerRef.wfa_f)
-        : lowerRef.wfa_m + t * (upperRef.wfa_m - lowerRef.wfa_m),
-    hfa:
-      gender === "female"
-        ? lowerRef.hfa_f + t * (upperRef.hfa_f - lowerRef.hfa_f)
-        : lowerRef.hfa_m + t * (upperRef.hfa_m - lowerRef.hfa_m),
-    sd_w: lowerRef.sd_w + t * (upperRef.sd_w - lowerRef.sd_w),
-    sd_h: lowerRef.sd_h + t * (upperRef.sd_h - lowerRef.sd_h),
-  };
+
+  return sorted[sorted.length - 1];
+}
+
+function zScoreFromLms(observed: number, row: WHOIndexedRow): number {
+  if (observed <= 0) return 0;
+  if (row.l === 0) {
+    return Math.log(observed / row.m) / row.s;
+  }
+  return (Math.pow(observed / row.m, row.l) - 1) / (row.l * row.s);
+}
+
+function classifyUnderweight(waz: number): WHOStatus {
+  if (waz < -3) return "severe_underweight";
+  if (waz < -2) return "underweight";
+  return "normal";
+}
+
+function classifyStunting(haz: number): WHOStatus {
+  if (haz < -3) return "severe_stunting";
+  if (haz < -2) return "stunted";
+  return "normal";
+}
+
+function classifyWasting(whz: number): WHOStatus {
+  if (whz < -3) return "severe_wasting";
+  if (whz < -2) return "wasted";
+  return "normal";
+}
+
+function getPrimaryWHOStatus(
+  underweightStatus: WHOStatus,
+  stuntingStatus: WHOStatus,
+  wastingStatus: WHOStatus,
+): WHOStatus {
+  const severityOrder: WHOStatus[] = [
+    "severe_wasting",
+    "severe_stunting",
+    "severe_underweight",
+    "wasted",
+    "stunted",
+    "underweight",
+    "normal",
+  ];
+
+  return [underweightStatus, stuntingStatus, wastingStatus].sort(
+    (a, b) => severityOrder.indexOf(a) - severityOrder.indexOf(b),
+  )[0];
+}
+
+function getWHOStatusCopy(status: WHOStatus) {
+  switch (status) {
+    case "severe_wasting":
+      return {
+        label: "Severe Wasting",
+        description:
+          "Weight-for-height is below the WHO threshold for severe acute malnutrition.",
+      };
+    case "wasted":
+      return {
+        label: "Wasting",
+        description:
+          "Weight-for-height is below the WHO threshold for acute malnutrition.",
+      };
+    case "severe_stunting":
+      return {
+        label: "Severe Stunting",
+        description:
+          "Height-for-age is below the WHO threshold for severe chronic malnutrition.",
+      };
+    case "stunted":
+      return {
+        label: "Stunting",
+        description:
+          "Height-for-age is below the WHO threshold for chronic malnutrition.",
+      };
+    case "severe_underweight":
+      return {
+        label: "Severe Underweight",
+        description:
+          "Weight-for-age is below the WHO threshold for severe underweight.",
+      };
+    case "underweight":
+      return {
+        label: "Underweight",
+        description:
+          "Weight-for-age is below the WHO threshold for underweight.",
+      };
+    default:
+      return {
+        label: "Normal",
+        description: "Anthropometric growth indicators are within WHO thresholds.",
+      };
+  }
 }
 
 export function calculateBMI(weight: number, height: number): number {
@@ -131,10 +184,10 @@ export function calculateWastingScore(
   weight: number,
   age: number,
 ): number {
-  // Age in months; normalize BMI against expected range for age
+  // Age in months; normalize BMI against expected range for age.
   const expectedBMI = age < 24 ? 17.5 : age < 60 ? 16.5 : 15.5;
   const bmiDeviation = (expectedBMI - bmi) / expectedBMI;
-  // Height-for-weight ratio (simplified)
+  // Height-for-weight ratio heuristic for overall risk fusion.
   const hwRatio = (weight / height) * 100;
   const expectedHWRatio = age < 12 ? 11 : age < 36 ? 13 : 15;
   const hwDeviation = (expectedHWRatio - hwRatio) / expectedHWRatio;
@@ -152,21 +205,19 @@ export function waterSourceToScore(waterSource: WaterSourceType): number {
   return map[waterSource] ?? 5;
 }
 
-/** DietaryScore = 0.4×DietDiversity + 0.3×WaterSource + 0.3×RecentDiarrhea */
+/** DietaryScore = 0.4*DietDiversity + 0.3*WaterSource + 0.3*RecentDiarrhea */
 export function calculateDietaryScore(
   dietDiversity: number,
   waterSource: number,
   recentDiarrhea: number,
 ): number {
-  // Inputs are 0-10, outputs 0-100
   const score =
     (0.4 * dietDiversity + 0.3 * waterSource + 0.3 * recentDiarrhea) * 10;
-  // Invert: higher score = higher RISK
   const riskScore = 100 - score;
   return Math.max(0, Math.min(100, riskScore));
 }
 
-/** FinalScore = 0.7×WastingScore + 0.3×DietaryRiskScore */
+/** FinalScore = 0.7*WastingScore + 0.3*DietaryRiskScore */
 export function calculateFinalScore(
   wastingScore: number,
   dietaryScore: number,
@@ -212,58 +263,54 @@ export function calculateWHOZScore(
   age: number,
   gender: Gender,
 ): WHOZScoreResult {
-  const ref = getWHOReference(age, gender);
-  // Weight-for-age Z-score
-  const wazScore = (weight - ref.wfa) / (ref.sd_w * 2);
-  // Height-for-age Z-score
-  const hazScore = (height - ref.hfa) / (ref.sd_h * 2);
-  // Weight-for-height (wasting indicator) - simplified
-  const whzScore = (weight - ref.wfa * 0.85) / (ref.sd_w * 1.5);
+  const sex = normalizeGender(gender);
+  const bmi = calculateBMI(weight, height);
 
-  // Use worst Z-score as primary indicator
-  const primaryZ = Math.min(wazScore, hazScore, whzScore);
+  const wfaRef = interpolateRow(age, WHO_TABLES.wfa[sex], "ageMonths");
+  const lhfaTable =
+    age < 24 ? WHO_TABLES.lhfa[sex]["0_24"] : WHO_TABLES.lhfa[sex]["24_60"];
+  const bmiTable =
+    age < 24 ? WHO_TABLES.bfa[sex]["0_24"] : WHO_TABLES.bfa[sex]["24_60"];
+  const sizeTable = age < 24 ? WHO_TABLES.wfl[sex] : WHO_TABLES.wfh[sex];
 
-  let status: WHOStatus;
-  let label: string;
-  let description: string;
+  const hazRef = interpolateRow(age, lhfaTable, "ageMonths");
+  const bazRef = interpolateRow(age, bmiTable, "ageMonths");
+  const whzRef = interpolateRow(height, sizeTable, "sizeCm");
 
-  if (primaryZ >= -1) {
-    status = "normal";
-    label = "Normal";
-    description = "Growth is within healthy WHO standards";
-  } else if (primaryZ >= -2) {
-    if (wazScore < -1) {
-      status = "underweight";
-      label = "Underweight";
-      description = "Weight is slightly below WHO reference median";
-    } else {
-      status = "stunted";
-      label = "Mildly Stunted";
-      description = "Height is slightly below WHO reference for age";
-    }
-  } else if (primaryZ >= -3) {
-    if (whzScore < -2) {
-      status = "wasted";
-      label = "Wasted";
-      description = "Acute malnutrition — weight-for-height is critically low";
-    } else {
-      status = "stunted";
-      label = "Stunted";
-      description =
-        "Chronic malnutrition — height significantly below WHO standard";
-    }
-  } else {
-    status = "severe_wasting";
-    label = "Severe Wasting";
-    description = "Severe acute malnutrition — immediate intervention required";
-  }
+  const waz = zScoreFromLms(weight, wfaRef);
+  const haz = zScoreFromLms(height, hazRef);
+  const whz = zScoreFromLms(weight, whzRef);
+  const baz = zScoreFromLms(bmi, bazRef);
 
-  return { zScore: Number(primaryZ.toFixed(2)), status, label, description };
+  const underweightStatus = classifyUnderweight(waz);
+  const stuntingStatus = classifyStunting(haz);
+  const wastingStatus = classifyWasting(whz);
+  const status = getPrimaryWHOStatus(
+    underweightStatus,
+    stuntingStatus,
+    wastingStatus,
+  );
+  const primaryZ = Math.min(waz, haz, whz);
+  const copy = getWHOStatusCopy(status);
+
+  return {
+    zScore: Number(primaryZ.toFixed(2)),
+    status,
+    label: copy.label,
+    description: copy.description,
+    waz: Number(waz.toFixed(2)),
+    haz: Number(haz.toFixed(2)),
+    whz: Number(whz.toFixed(2)),
+    baz: Number(baz.toFixed(2)),
+    underweightStatus,
+    stuntingStatus,
+    wastingStatus,
+  };
 }
 
 // XP earned per assessment based on risk level and consistency
 export function calculateXP(assessment: Assessment): number {
-  let xp = 50; // base XP for completing an assessment
+  let xp = 50;
   if (assessment.cameraAnalyzed) xp += 20;
   if (assessment.riskLevel === "low") xp += 30;
   else if (assessment.riskLevel === "moderate") xp += 15;
@@ -387,7 +434,9 @@ export function getWHOStatusColor(status: WHOStatus): string {
   const map: Record<WHOStatus, string> = {
     normal: "#10b981",
     underweight: "#f59e0b",
+    severe_underweight: "#d97706",
     stunted: "#f97316",
+    severe_stunting: "#ea580c",
     wasted: "#ef4444",
     severe_wasting: "#dc2626",
   };

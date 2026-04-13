@@ -81,15 +81,23 @@ function getWHOColor(status: string): string {
     return "text-emerald-400 bg-emerald-400/10 border-emerald-400/25";
   if (status === "underweight")
     return "text-amber-400 bg-amber-400/10 border-amber-400/25";
+  if (status === "severe_underweight")
+    return "text-orange-400 bg-orange-400/10 border-orange-400/25";
   if (status === "stunted")
     return "text-orange-400 bg-orange-400/10 border-orange-400/25";
+  if (status === "severe_stunting")
+    return "text-red-400 bg-red-400/10 border-red-400/25";
+  if (status === "wasted")
+    return "text-rose-400 bg-rose-400/10 border-rose-400/25";
   return "text-red-400 bg-red-400/10 border-red-400/25";
 }
 
 function getWHOLabel(status: string): string {
   if (status === "normal") return "Normal";
   if (status === "underweight") return "Underweight";
+  if (status === "severe_underweight") return "Severe Underweight";
   if (status === "stunted") return "Stunted";
+  if (status === "severe_stunting") return "Severe Stunting";
   if (status === "wasted") return "Wasted";
   return "Severe Wasting";
 }
@@ -224,8 +232,13 @@ function AssessmentCard({
                       unit: "/100",
                     },
                     {
-                      label: "Z-Score",
-                      value: assessment.whoZScore.toFixed(2),
+                      label: "HAZ",
+                      value: (assessment.haz ?? assessment.whoZScore).toFixed(2),
+                      unit: "",
+                    },
+                    {
+                      label: "WHZ",
+                      value: (assessment.whz ?? assessment.whoZScore).toFixed(2),
                       unit: "",
                     },
                     {
@@ -479,7 +492,7 @@ export default function History() {
       const key = getMonthLabel(a.date);
       if (!byMonth[key])
         byMonth[key] = { zScores: [], weights: [], heights: [] };
-      byMonth[key].zScores.push(a.whoZScore);
+      byMonth[key].zScores.push(a.haz ?? a.whoZScore);
       byMonth[key].weights.push(a.weight);
       byMonth[key].heights.push(a.height);
     }
@@ -606,10 +619,10 @@ export default function History() {
                     </div>
                     <div>
                       <h2 className="text-sm font-semibold text-foreground">
-                        WHO Z-Score Trend
+                        WHO HAZ Trend
                       </h2>
                       <p className="text-xs text-muted-foreground">
-                        Height-for-age deviation from median
+                        Height-for-age z-score over time
                       </p>
                     </div>
                     <div className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
@@ -697,7 +710,7 @@ export default function History() {
                       <Area
                         type="monotone"
                         dataKey="zScore"
-                        name="Z-Score"
+                        name="HAZ"
                         stroke="oklch(0.72 0.18 176)"
                         strokeWidth={2.5}
                         fill="url(#zScoreGrad)"
@@ -965,17 +978,22 @@ export default function History() {
                 </GlassCard>
 
                 {/* Quick stats */}
-                <GlassCard animate delay={0.25} className="p-4 mt-4">
+                <GlassCard
+                  animate
+                  delay={0.25}
+                  className="hidden p-4 mt-4"
+                  aria-hidden="true"
+                >
                   <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
                     Quick Stats
                   </h3>
                   <div className="space-y-3">
                     {[
                       {
-                        label: "Avg Z-Score",
+                        label: "Avg HAZ",
                         value: filtered.length
                           ? (
-                              filtered.reduce((s, a) => s + a.whoZScore, 0) /
+                              filtered.reduce((s, a) => s + (a.haz ?? a.whoZScore), 0) /
                               filtered.length
                             ).toFixed(2)
                           : "—",

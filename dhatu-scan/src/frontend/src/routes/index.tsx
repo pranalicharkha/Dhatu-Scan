@@ -14,6 +14,7 @@ import { useApp } from "../context/AppContext";
 const AuthPage = lazy(() => import("../pages/AuthPage"));
 const LoginPage = lazy(() => import("../pages/LoginPage"));
 const RegisterPage = lazy(() => import("../pages/RegisterPage"));
+const ChildProfilesPage = lazy(() => import("../pages/ChildProfilesPage"));
 const DashboardHome = lazy(() => import("../pages/DashboardHome"));
 const ScreeningHub = lazy(() => import("../pages/ScreeningHub"));
 const Camera = lazy(() => import("../pages/Camera"));
@@ -67,6 +68,18 @@ const dashboardRoute = createRoute({
     <ProtectedPage>
       <PageWrapper>
         <DashboardHome />
+      </PageWrapper>
+    </ProtectedPage>
+  ),
+});
+
+const childProfilesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/children",
+  component: () => (
+    <ProtectedPage>
+      <PageWrapper>
+        <ChildProfilesPage />
       </PageWrapper>
     </ProtectedPage>
   ),
@@ -192,6 +205,7 @@ const routeTree = rootRoute.addChildren([
   authRoute,
   loginRoute,
   registerRoute,
+  childProfilesRoute,
   dashboardRoute,
   screeningRoute,
   cameraRoute,

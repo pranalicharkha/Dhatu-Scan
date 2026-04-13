@@ -43,21 +43,30 @@ export default function LoginPage() {
       </div>
 
       <div className="mx-auto max-w-7xl">
-        <div className="mb-8 flex items-center justify-between">
-          <Link to="/" className="text-sm font-semibold" style={{ color: PALETTE.ink }}>
-            Back
-          </Link>
-          <Link
-            to="/register"
-            className="rounded-full px-5 py-2 text-sm font-semibold transition-smooth"
+        <div className="sticky top-0 z-40 mb-8 py-2">
+          <div
+            className="flex items-center justify-between rounded-full px-4 py-3 backdrop-blur-md sm:px-5"
             style={{
-              backgroundColor: PALETTE.white,
-              color: PALETTE.ink,
-              border: `1px solid ${PALETTE.lavender}`,
+              backgroundColor: "rgba(255, 250, 245, 0.78)",
+              border: "1px solid rgba(156, 143, 203, 0.22)",
+              boxShadow: "0 14px 36px rgba(82, 69, 109, 0.08)",
             }}
           >
-            Register
-          </Link>
+            <Link to="/" className="text-sm font-semibold" style={{ color: PALETTE.ink }}>
+              Back
+            </Link>
+            <Link
+              to="/register"
+              className="rounded-full px-5 py-2 text-sm font-semibold transition-smooth"
+              style={{
+                backgroundColor: PALETTE.white,
+                color: PALETTE.ink,
+                border: `1px solid ${PALETTE.lavender}`,
+              }}
+            >
+              Register
+            </Link>
+          </div>
         </div>
 
         <div className="grid items-center gap-10 lg:grid-cols-[1fr_0.9fr]">

@@ -122,8 +122,15 @@ export default function AuthPage() {
         />
       </div>
 
-      <header className="px-4 py-6 sm:px-6 lg:px-10">
-        <div className="mx-auto flex max-w-7xl items-center justify-between">
+      <header className="sticky top-0 z-40 px-4 py-4 sm:px-6 lg:px-10">
+        <div
+          className="mx-auto flex max-w-7xl items-center justify-between rounded-full px-4 py-3 backdrop-blur-md sm:px-5"
+          style={{
+            backgroundColor: "rgba(255, 250, 245, 0.78)",
+            border: "1px solid rgba(156, 143, 203, 0.22)",
+            boxShadow: "0 14px 36px rgba(82, 69, 109, 0.08)",
+          }}
+        >
           <Link to="/" className="flex items-center gap-3">
             <div
               className="flex h-11 w-11 items-center justify-center rounded-2xl text-sm font-bold"

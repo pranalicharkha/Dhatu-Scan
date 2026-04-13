@@ -1,14 +1,20 @@
 import { Outlet, useLocation } from "@tanstack/react-router";
+import { PanelLeftOpen } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
+import { useTheme } from "next-themes";
+import { useState } from "react";
 import { useApp } from "../context/AppContext";
 import BottomNav from "./BottomNav";
 import FloatingParticles from "./FloatingParticles";
 import LoadingSpinner from "./LoadingSpinner";
 import Sidebar from "./Sidebar";
+import ThemeToggle from "./ThemeToggle";
 
 export default function Layout() {
   const location = useLocation();
   const { state } = useApp();
+  const { resolvedTheme } = useTheme();
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   if (state.isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
@@ -27,17 +33,56 @@ export default function Layout() {
 
   const isPublicPage = location.pathname === "/";
   const showShell = state.isAuthenticated && !isPublicPage;
+  const isDark = resolvedTheme === "dark";
 
   return (
     <div
-      className={showShell ? "app-shell-light relative min-h-screen text-foreground" : "relative min-h-screen text-foreground"}
-      style={showShell ? { backgroundColor: "#F2EAE0" } : undefined}
+      className={
+        showShell
+          ? `${isDark ? "" : "app-shell-light"} relative min-h-screen text-foreground`
+          : "relative min-h-screen text-foreground"
+      }
+      style={
+        showShell
+          ? { backgroundColor: isDark ? "#141821" : "#F2EAE0" }
+          : undefined
+      }
     >
       {!showShell && <FloatingParticles />}
 
-      {showShell && <Sidebar />}
+      {showShell && isSidebarOpen && (
+        <Sidebar onToggle={() => setIsSidebarOpen(false)} />
+      )}
 
-      <div className={showShell ? "relative z-10 md:ml-72" : "relative z-10"}>
+      {showShell && !isSidebarOpen && (
+        <button
+          type="button"
+          onClick={() => setIsSidebarOpen(true)}
+          className="fixed left-4 top-4 z-50 hidden items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium shadow-sm transition-smooth md:inline-flex"
+          style={{
+            backgroundColor: isDark ? "#1D2430" : "#FFFAF5",
+            borderColor: isDark ? "#2C3545" : "#d7cabb",
+          }}
+          aria-label="Open sidebar"
+        >
+          <PanelLeftOpen size={16} />
+          Menu
+        </button>
+      )}
+
+      <div
+        className={`fixed right-4 top-4 z-50 ${showShell ? "md:right-6" : ""}`}
+      >
+        <ThemeToggle />
+      </div>
+
+      <div
+        className={
+          showShell
+            ? `relative z-10 transition-[margin] duration-300 ${isSidebarOpen ? "md:ml-72" : "md:ml-0"}`
+            : "relative z-10"
+        }
+      >
         <AnimatePresence mode="wait">
           <motion.main
             key={location.pathname}
