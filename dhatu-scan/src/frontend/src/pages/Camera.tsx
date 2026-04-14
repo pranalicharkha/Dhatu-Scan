@@ -23,6 +23,7 @@ import {
   Upload,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
+import { useTheme } from "next-themes";
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
 
 // ── Guidance tips ─────────────────────────────────────────────────────────────
@@ -118,6 +119,7 @@ type LandmarkDetector = {
 
 export default function Camera() {
   const navigate = useNavigate();
+  const { resolvedTheme } = useTheme();
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const faceMeshRef = useRef<LandmarkDetector | null>(null);
@@ -161,8 +163,11 @@ export default function Camera() {
   useEffect(() => {
     if (inputMode === "upload") {
       setCaptureState("idle");
+      setCapturePhase("face");
       setCanCapture(false);
       setLiveTip("Upload mode enabled.");
+      setFaceCaptureDataUrl(null);
+      setBodyCaptureDataUrl(null);
       setSessionReady(false);
       setProcessedSession(null);
       clearCameraAnalysisSession();
@@ -172,6 +177,8 @@ export default function Camera() {
     setUploadBodyDetectedCount(0);
     setUploadFaceDetectedCount(0);
     setLiveTip(null);
+    setFaceCaptureDataUrl(null);
+    setBodyCaptureDataUrl(null);
     setSessionReady(false);
     setProcessedSession(null);
     clearCameraAnalysisSession();
@@ -811,14 +818,29 @@ export default function Camera() {
           "linear-gradient(90deg, transparent 0%, rgba(248,113,113,0.9) 50%, transparent 100%)",
         boxShadow: "0 0 10px rgba(248,113,113,0.8)",
       };
+  const isDark = resolvedTheme === "dark";
+  const pageBackground = isDark
+    ? "radial-gradient(ellipse at 50% 0%, oklch(0.12 0.025 250) 0%, oklch(0.09 0.015 250) 100%)"
+    : "radial-gradient(ellipse at 50% 0%, #F8F1E7 0%, #F2E7D9 100%)";
+  const uploadPanelBackground = isDark
+    ? "rgba(25, 31, 43, 0.52)"
+    : "rgba(255, 247, 238, 0.86)";
+  const uploadPanelHoverBackground = isDark
+    ? "rgba(34, 41, 56, 0.7)"
+    : "rgba(250, 238, 223, 0.96)";
+  const uploadPanelBorder = isDark
+    ? "rgba(255,255,255,0.15)"
+    : "rgba(156, 143, 203, 0.2)";
+  const mutedPreviewBackground = isDark
+    ? "rgba(255,255,255,0.06)"
+    : "rgba(255,255,255,0.72)";
 
   return (
     <div
       data-ocid="camera-page"
       className="min-h-screen bg-background flex flex-col items-center pt-4 pb-24 px-4"
       style={{
-        background:
-          "radial-gradient(ellipse at 50% 0%, oklch(0.12 0.025 250) 0%, oklch(0.09 0.015 250) 100%)",
+        background: pageBackground,
       }}
     >
       {/* ── Step progress ─────────────────────────────────────────────────── */}
@@ -927,7 +949,10 @@ export default function Camera() {
               playsInline
             />
           ) : (
-            <div className="w-full h-full bg-muted/30 flex flex-col items-center justify-center gap-3">
+            <div
+              className="w-full h-full flex flex-col items-center justify-center gap-3"
+              style={{ background: uploadPanelBackground }}
+            >
               <CameraIcon className="w-10 h-10 text-muted-foreground" />
               <p className="text-muted-foreground text-sm">
                 Camera unavailable
@@ -1247,7 +1272,13 @@ export default function Camera() {
                   className="w-full h-20 object-cover rounded-md"
                 />
               ) : (
-                <div className="w-full h-20 rounded-md bg-white/5 border border-white/10" />
+                <div
+                  className="w-full h-20 rounded-md"
+                  style={{
+                    background: mutedPreviewBackground,
+                    border: `1px solid ${uploadPanelBorder}`,
+                  }}
+                />
               )}
             </div>
             <div className="rounded-lg border border-white/15 bg-background/40 p-2">
@@ -1259,7 +1290,13 @@ export default function Camera() {
                   className="w-full h-20 object-cover rounded-md"
                 />
               ) : (
-                <div className="w-full h-20 rounded-md bg-white/5 border border-white/10" />
+                <div
+                  className="w-full h-20 rounded-md"
+                  style={{
+                    background: mutedPreviewBackground,
+                    border: `1px solid ${uploadPanelBorder}`,
+                  }}
+                />
               )}
             </div>
           </div>
@@ -1276,7 +1313,13 @@ export default function Camera() {
           variant="elevated"
           className="w-full max-w-md p-4 flex flex-col items-center gap-4"
         >
-          <div className="w-full rounded-xl border border-white/15 bg-background/40 p-4 text-center">
+          <div
+            className="w-full rounded-xl p-4 text-center"
+            style={{
+              border: `1px solid ${uploadPanelBorder}`,
+              background: uploadPanelBackground,
+            }}
+          >
             <Upload className="w-8 h-8 mx-auto text-primary mb-2" />
             <p className="text-sm font-semibold text-foreground">
               Upload Child Image
@@ -1287,9 +1330,21 @@ export default function Camera() {
           </div>
 
           <label
-            className={`w-full rounded-xl border border-white/15 bg-background/40 px-4 py-3 text-center text-sm font-semibold text-foreground/90 transition-smooth ${
-              uploadAnalyzing ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-background/60"
+            className={`w-full rounded-xl px-4 py-3 text-center text-sm font-semibold text-foreground/90 transition-smooth ${
+              uploadAnalyzing ? "cursor-not-allowed opacity-60" : "cursor-pointer"
             }`}
+            style={{
+              border: `1px solid ${uploadPanelBorder}`,
+              background: uploadPanelBackground,
+            }}
+            onMouseEnter={(event) => {
+              if (!uploadAnalyzing) {
+                event.currentTarget.style.background = uploadPanelHoverBackground;
+              }
+            }}
+            onMouseLeave={(event) => {
+              event.currentTarget.style.background = uploadPanelBackground;
+            }}
           >
             {uploadAnalyzing ? "Analyzing image..." : "Select Image From Device"}
             <input
@@ -1301,7 +1356,13 @@ export default function Camera() {
             />
           </label>
 
-          <div className="w-full rounded-xl border border-white/15 bg-background/40 px-3 py-2">
+          <div
+            className="w-full rounded-xl px-3 py-2"
+            style={{
+              border: `1px solid ${uploadPanelBorder}`,
+              background: uploadPanelBackground,
+            }}
+          >
             <div className="flex items-center justify-between text-xs">
               <span className={uploadBodyDetectedCount >= 33 ? "text-emerald-300" : "text-red-300"}>
                 Body landmarks: {uploadBodyDetectedCount}/33
@@ -1323,7 +1384,13 @@ export default function Camera() {
           </div>
 
           {uploadPreviewUrl && (
-            <div className="w-full rounded-xl border border-white/15 bg-background/40 p-2">
+            <div
+              className="w-full rounded-xl p-2"
+              style={{
+                border: `1px solid ${uploadPanelBorder}`,
+                background: uploadPanelBackground,
+              }}
+            >
               <img
                 src={uploadPreviewUrl}
                 alt="Uploaded preview"
