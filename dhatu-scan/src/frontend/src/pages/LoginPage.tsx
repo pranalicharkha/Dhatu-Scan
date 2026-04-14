@@ -2,7 +2,6 @@ import { useApp } from "@/context/AppContext";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { motion } from "motion/react";
 import { useState } from "react";
-import { db } from "@/lib/db";
 
 const PALETTE = {
   page: "#f4ebdf",
@@ -19,8 +18,8 @@ const PALETTE = {
 export default function LoginPage() {
   const navigate = useNavigate();
   const { signIn } = useApp();
-  const [email, setEmail] = useState("caregiver@dhatuscan.app");
-  const [password, setPassword] = useState("password");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
 
   const handleLogin = async () => {
@@ -43,13 +42,10 @@ export default function LoginPage() {
 
       const data = await response.json();
 
-      // Save to Dexie Local Store (ID 1)
-      await db.currentUser.put({
-        id: 1,
-        email: email,
-        auth_token: data.access_token,
-        full_name: data.fullName || "Parent"
-      });
+      // Save auth session to localStorage (single source of truth)
+      localStorage.setItem("dhatu_auth_token", data.access_token);
+      localStorage.setItem("dhatu_auth_email", email);
+      localStorage.setItem("dhatu_auth_name", data.fullName || "Parent");
 
       signIn();
       await navigate({ to: "/dashboard" });
@@ -57,6 +53,7 @@ export default function LoginPage() {
       setErrorMsg(err.message || "Failed to login");
     }
   };
+
 
   return (
     <div

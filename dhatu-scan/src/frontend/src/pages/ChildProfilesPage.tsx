@@ -5,7 +5,6 @@ import { formatAgeFromMonths, calculateAgeInMonths } from "@/utils/childAge";
 import { Link } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "motion/react";
 import { useMemo, useState } from "react";
-import { db } from "@/lib/db";
 
 const API_BASE = "http://127.0.0.1:8000";
 
@@ -30,9 +29,8 @@ type ChildFormState = {
 
 const INITIAL_FORM: ChildFormState = { name: "", dateOfBirth: "", gender: "male" };
 
-async function getToken(): Promise<string | null> {
-  const user = await db.currentUser.get(1);
-  return user?.auth_token ?? null;
+function getToken(): string | null {
+  return localStorage.getItem("dhatu_auth_token");
 }
 
 export default function ChildProfilesPage() {
@@ -92,19 +90,12 @@ export default function ChildProfilesPage() {
       updatedAt: now,
     };
 
-    // Save to local React state + Dexie immediately (offline-first)
+    // Save to local React state + dhatuscan-db immediately (offline-first)
     addChild(localProfile);
-    await db.childProfiles.put({
-      childId: localProfile.id,
-      parentEmail: "",
-      childName: localProfile.name,
-      dob: localProfile.dateOfBirth,
-      gender: localProfile.gender,
-    });
 
     // Try to sync to cloud if available
     try {
-      const token = await getToken();
+      const token = getToken();
       if (token) {
         const resp = await fetch(`${API_BASE}/children`, {
           method: "POST",
@@ -114,16 +105,9 @@ export default function ChildProfilesPage() {
         });
         if (resp.ok) {
           const cloudChild = await resp.json();
-          // Update local Dexie with the cloud's canonical ID
-          await db.childProfiles.delete(localProfile.id);
-          await db.childProfiles.put({
-            childId: cloudChild.childId,
-            parentEmail: "",
-            childName: cloudChild.childName,
-            dob: cloudChild.dob,
-            gender: cloudChild.gender,
-          });
           setApiMsg("✅ Child saved to cloud & local device.");
+          // Update the local react state with cloud's DB UUID
+          updateChild({ ...localProfile, id: cloudChild.childId });
         }
       } else {
         setApiMsg("⚠️ Saved locally only. Login to sync to cloud.");
@@ -150,12 +134,10 @@ export default function ChildProfilesPage() {
     const now = new Date().toISOString();
     // Update local state
     updateChild({ ...child, name: editForm.name, dateOfBirth: editForm.dateOfBirth, gender: editForm.gender, updatedAt: now });
-    // Update Dexie
-    await db.childProfiles.update(child.id, { childName: editForm.name, dob: editForm.dateOfBirth, gender: editForm.gender });
 
     // Sync to cloud
     try {
-      const token = await getToken();
+      const token = getToken();
       if (token) {
         await fetch(`${API_BASE}/children/${child.id}`, {
           method: "PUT",
@@ -175,13 +157,12 @@ export default function ChildProfilesPage() {
     if (!window.confirm(`Delete profile for ${child.name}? This cannot be undone.`)) return;
     setIsLoading(true);
 
-    // Remove from local state and Dexie
+    // Remove from local state and dhatuscan-db
     removeChild(child.id);
-    await db.childProfiles.delete(child.id);
 
     // Delete from cloud
     try {
-      const token = await getToken();
+      const token = getToken();
       if (token) {
         await fetch(`${API_BASE}/children/${child.id}`, {
           method: "DELETE",

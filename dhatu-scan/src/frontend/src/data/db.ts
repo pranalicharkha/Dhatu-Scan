@@ -1,13 +1,14 @@
 import type { Assessment, ChildProfile, GamificationState } from "@/types";
 
 export const DB_NAME = "dhatu-scan-db";
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;
 
 export const STORES = {
   children: "children",
   assessments: "assessments",
   gamification: "gamification",
   syncQueue: "syncQueue",
+  scans: "scans",
 } as const;
 
 export type SyncStatus = "pending" | "synced" | "failed";
@@ -112,6 +113,10 @@ function upgradeDb(db: IDBDatabase) {
       { name: "createdAt", keyPath: "createdAt" },
     ]);
   }
+
+  const scansStore = ensureStore(db, STORES.scans, {
+    keyPath: "id",
+  });
 }
 
 export function getDb(): Promise<IDBDatabase> {

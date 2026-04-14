@@ -10,18 +10,13 @@ import {
   getAssessments,
   saveAssessmentRecord,
 } from "../data/assessmentRepository";
-import { getChildren, saveChild } from "../data/childRepository";
+import { getChildren, saveChild, deleteChild } from "../data/childRepository";
 import {
   getGamification,
   saveGamification,
 } from "../data/gamificationRepository";
 import type { Assessment, ChildProfile, GamificationState } from "../types";
 import { calculateXP, getLevel } from "../utils/assessmentLogic";
-import {
-  SAMPLE_CHILDREN,
-  SAMPLE_GAMIFICATION,
-  getAllSampleAssessments,
-} from "../utils/sampleData";
 
 interface AppState {
   children: ChildProfile[];
@@ -143,12 +138,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     async function initialize() {
       try {
+        // One-time migration: wipe old Dexie "DhatuScanDB" and reset sample data
+        const MIGRATED_KEY = "dhatu_v2_migrated";
+        if (!localStorage.getItem(MIGRATED_KEY)) {
+          // Delete the old Dexie database if it exists
+          try {
+            indexedDB.deleteDatabase("DhatuScanDB");
+          } catch { /* ignore */ }
+          // Clear sample data from native dhatu-scan-db
+          try {
+            const { clearDhatuScanDb } = await import("../data/db");
+            await clearDhatuScanDb();
+          } catch { /* ignore if db doesn't exist yet */ }
+          // Reset init flag and mark migration done
+          localStorage.removeItem(META_KEYS.INITIALIZED);
+          localStorage.setItem(MIGRATED_KEY, "true");
+        }
+
         if (!isInitialized()) {
-          for (const child of SAMPLE_CHILDREN) await saveChild(child);
-          for (const assessment of getAllSampleAssessments()) {
-            await saveAssessmentRecord(assessment);
-          }
-          await saveGamification(SAMPLE_GAMIFICATION);
           markInitialized();
         }
 
@@ -202,6 +209,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const removeChild = useCallback((id: string) => {
+    void deleteChild(id);
     dispatch({ type: "REMOVE_CHILD", payload: id });
   }, []);
 
