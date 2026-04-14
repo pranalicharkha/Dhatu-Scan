@@ -17,9 +17,9 @@ const PALETTE = {
 export default function RegisterPage() {
   const navigate = useNavigate();
   const { signIn } = useApp();
-  const [fullName, setFullName] = useState("Caregiver Name");
-  const [email, setEmail] = useState("caregiver@dhatuscan.app");
-  const [password, setPassword] = useState("password");
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [msg, setMsg] = useState("");
 
   const [isLoading, setIsLoading] = useState(false);

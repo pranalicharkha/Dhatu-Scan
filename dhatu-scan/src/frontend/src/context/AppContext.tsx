@@ -10,7 +10,7 @@ import {
   getAssessments,
   saveAssessmentRecord,
 } from "../data/assessmentRepository";
-import { getChildren, saveChild } from "../data/childRepository";
+import { deleteChild, getChildren, saveChild } from "../data/childRepository";
 import {
   getGamification,
   saveGamification,
@@ -202,6 +202,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const removeChild = useCallback((id: string) => {
+    void deleteChild(id);
     dispatch({ type: "REMOVE_CHILD", payload: id });
   }, []);
 

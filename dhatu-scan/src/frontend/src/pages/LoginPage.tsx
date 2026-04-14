@@ -19,8 +19,8 @@ const PALETTE = {
 export default function LoginPage() {
   const navigate = useNavigate();
   const { signIn } = useApp();
-  const [email, setEmail] = useState("caregiver@dhatuscan.app");
-  const [password, setPassword] = useState("password");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
 
   const handleLogin = async () => {
@@ -48,7 +48,7 @@ export default function LoginPage() {
         id: 1,
         email: email,
         auth_token: data.access_token,
-        full_name: data.fullName || "Parent"
+        full_name: data.fullName || "Parent",
       });
 
       signIn();
