@@ -47,7 +47,7 @@ export default function LoginPage() {
       localStorage.setItem("dhatu_auth_email", email);
       localStorage.setItem("dhatu_auth_name", data.fullName || "Parent");
 
-      signIn();
+      await signIn();
       await navigate({ to: "/dashboard" });
     } catch (err: any) {
       setErrorMsg(err.message || "Failed to login");

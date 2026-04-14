@@ -34,7 +34,7 @@ function getToken(): string | null {
 }
 
 export default function ChildProfilesPage() {
-  const { state, activeChild, addChild, updateChild, removeChild, setActiveChild } = useApp();
+  const { state, activeChild, addChild, updateChild, replaceChildId, removeChild, setActiveChild } = useApp();
   const [form, setForm] = useState<ChildFormState>(INITIAL_FORM);
   const [errors, setErrors] = useState<Partial<Record<keyof ChildFormState, string>>>({});
   const [isLoading, setIsLoading] = useState(false);
@@ -106,8 +106,8 @@ export default function ChildProfilesPage() {
         if (resp.ok) {
           const cloudChild = await resp.json();
           setApiMsg("✅ Child saved to cloud & local device.");
-          // Update the local react state with cloud's DB UUID
-          updateChild({ ...localProfile, id: cloudChild.childId });
+          // Replace temporary local ID with server child ID
+          replaceChildId(localProfile.id, { ...localProfile, id: cloudChild.childId });
         }
       } else {
         setApiMsg("⚠️ Saved locally only. Login to sync to cloud.");

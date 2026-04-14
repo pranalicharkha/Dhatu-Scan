@@ -58,7 +58,7 @@ export default function Sidebar({
   const primaryButtonBg = isDark ? "#7C6BC0" : "#52456D";
 
   const handleLogout = async () => {
-    signOut();
+    await signOut();
     await navigate({ to: "/" });
   };
 

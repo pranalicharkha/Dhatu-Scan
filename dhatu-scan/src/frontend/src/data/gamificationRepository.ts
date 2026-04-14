@@ -4,10 +4,17 @@ import { enqueueSync } from "./syncQueueRepository";
 
 const GAMIFICATION_ID = "default" as const;
 
+function getCurrentParentEmail(): string | null {
+  const email = localStorage.getItem("dhatu_auth_email");
+  return email?.trim() || null;
+}
+
 export async function saveGamification(state: GamificationState) {
+  const ownerEmail = getCurrentParentEmail();
   const localState: LocalGamificationState = {
     ...state,
     id: GAMIFICATION_ID,
+    ownerEmail: ownerEmail ?? undefined,
     syncStatus: "pending",
   };
 
@@ -18,13 +25,17 @@ export async function saveGamification(state: GamificationState) {
 }
 
 export async function getGamification(): Promise<LocalGamificationState | null> {
+  const ownerEmail = getCurrentParentEmail();
+  if (!ownerEmail) return null;
+
   const state = await withStore<LocalGamificationState | undefined>(
     STORES.gamification,
     "readonly",
     (store) => store.get(GAMIFICATION_ID),
   );
 
-  return state ?? null;
+  if (!state || state.ownerEmail !== ownerEmail) return null;
+  return state;
 }
 
 export async function markGamificationSynced() {

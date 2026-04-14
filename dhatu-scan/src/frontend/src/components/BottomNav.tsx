@@ -33,7 +33,7 @@ export default function BottomNav() {
   const { signOut } = useApp();
 
   const handleLogout = async () => {
-    signOut();
+    await signOut();
     await navigate({ to: "/" });
   };
 

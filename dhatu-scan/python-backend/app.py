@@ -627,6 +627,13 @@ def delete_child(child_id: str, current_user: Parent = Depends(get_current_user)
 
 @app.post("/assessment", response_model=AssessmentResponse)
 def generate_assessment(payload: AssessmentRequest, current_user: Parent = Depends(get_current_user), db: Session = Depends(get_db)) -> AssessmentResponse:
+    child = db.query(Child).filter(
+        Child.child_id == payload.childId,
+        Child.parent_email == current_user.email,
+    ).first()
+    if not child:
+        raise HTTPException(status_code=404, detail="Child not found")
+
     who_z, who_status = _who_zscore(payload.anthropometry)
     wasting = _round2(_wasting_score(payload.anthropometry))
     dietary = _round2(_dietary_score(payload.dietary))
@@ -672,7 +679,7 @@ def generate_assessment(payload: AssessmentRequest, current_user: Parent = Depen
     report = Report(
         id=f"rpt_{db_growth.id}",
         childId=payload.childId,
-        childName=payload.childName,
+        childName=child.child_name,
         createdAt=_to_iso_now(),
         capture=payload.capture,
         scores=ScoreBreakdown(
