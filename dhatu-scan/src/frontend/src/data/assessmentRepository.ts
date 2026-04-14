@@ -8,9 +8,16 @@ import {
 } from "./db";
 import { enqueueSync } from "./syncQueueRepository";
 
+function getCurrentParentEmail(): string | null {
+  const email = localStorage.getItem("dhatu_auth_email");
+  return email?.trim() || null;
+}
+
 function toLocalAssessment(assessment: Assessment): LocalAssessment {
+  const ownerEmail = getCurrentParentEmail();
   return {
     ...assessment,
+    ownerEmail: ownerEmail ?? undefined,
     syncStatus: "pending",
     deleted: false,
   };
@@ -25,6 +32,9 @@ export async function saveAssessmentRecord(assessment: Assessment) {
 }
 
 export async function getAssessments(): Promise<LocalAssessment[]> {
+  const ownerEmail = getCurrentParentEmail();
+  if (!ownerEmail) return [];
+
   const assessments = await withStore<LocalAssessment[]>(
     STORES.assessments,
     "readonly",
@@ -32,13 +42,19 @@ export async function getAssessments(): Promise<LocalAssessment[]> {
   );
 
   return assessments
-    .filter((assessment) => !assessment.deleted)
+    .filter(
+      (assessment) =>
+        !assessment.deleted && assessment.ownerEmail === ownerEmail,
+    )
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 }
 
 export async function getAssessmentsByChild(
   childId: string,
 ): Promise<LocalAssessment[]> {
+  const ownerEmail = getCurrentParentEmail();
+  if (!ownerEmail) return [];
+
   const db = await getDb();
   const tx = db.transaction(STORES.assessments, "readonly");
   const index = tx.objectStore(STORES.assessments).index("childId");
@@ -47,20 +63,28 @@ export async function getAssessmentsByChild(
   );
 
   return assessments
-    .filter((assessment) => !assessment.deleted)
+    .filter(
+      (assessment) =>
+        !assessment.deleted && assessment.ownerEmail === ownerEmail,
+    )
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 }
 
 export async function getAssessment(
   id: string,
 ): Promise<LocalAssessment | null> {
+  const ownerEmail = getCurrentParentEmail();
+  if (!ownerEmail) return null;
+
   const assessment = await withStore<LocalAssessment | undefined>(
     STORES.assessments,
     "readonly",
     (store) => store.get(id),
   );
 
-  return assessment && !assessment.deleted ? assessment : null;
+  return assessment && !assessment.deleted && assessment.ownerEmail === ownerEmail
+    ? assessment
+    : null;
 }
 
 export async function deleteAssessmentRecord(id: string) {
@@ -98,6 +122,9 @@ export async function markAssessmentSynced(id: string) {
 }
 
 export async function getPendingAssessments(): Promise<LocalAssessment[]> {
+  const ownerEmail = getCurrentParentEmail();
+  if (!ownerEmail) return [];
+
   const db = await getDb();
   const tx = db.transaction(STORES.assessments, "readonly");
   const index = tx.objectStore(STORES.assessments).index("syncStatus");
@@ -105,5 +132,7 @@ export async function getPendingAssessments(): Promise<LocalAssessment[]> {
     index.getAll("pending"),
   );
 
-  return assessments.filter((assessment) => !assessment.deleted);
+  return assessments.filter(
+    (assessment) => !assessment.deleted && assessment.ownerEmail === ownerEmail,
+  );
 }

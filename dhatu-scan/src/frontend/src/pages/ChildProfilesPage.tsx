@@ -42,8 +42,12 @@ async function getToken(): Promise<string | null> {
 }
 
 export default function ChildProfilesPage() {
+<<<<<<< HEAD
   const { state, activeChild, addChild, updateChild, removeChild, setActiveChild } =
     useApp();
+=======
+  const { state, activeChild, addChild, updateChild, replaceChildId, removeChild, setActiveChild } = useApp();
+>>>>>>> f0e9383e0ea4f8d1f97a6d60c8a5870feaf5c07b
   const [form, setForm] = useState<ChildFormState>(INITIAL_FORM);
   const [errors, setErrors] = useState<
     Partial<Record<keyof ChildFormState, string>>
@@ -140,6 +144,7 @@ export default function ChildProfilesPage() {
 
         if (resp.ok) {
           const cloudChild = await resp.json();
+<<<<<<< HEAD
           const syncedProfile: ChildProfile = {
             ...localProfile,
             id: cloudChild.childId,
@@ -163,6 +168,11 @@ export default function ChildProfilesPage() {
           setApiMsg("Child saved to cloud and local device.");
         } else {
           setApiMsg("Saved locally only. Cloud sync will retry later.");
+=======
+          setApiMsg("✅ Child saved to cloud & local device.");
+          // Replace temporary local ID with server child ID
+          replaceChildId(localProfile.id, { ...localProfile, id: cloudChild.childId });
+>>>>>>> f0e9383e0ea4f8d1f97a6d60c8a5870feaf5c07b
         }
       } else {
         setApiMsg("Saved locally only. Login to sync to cloud.");

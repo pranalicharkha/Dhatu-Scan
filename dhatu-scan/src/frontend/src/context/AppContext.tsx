@@ -10,7 +10,16 @@ import {
   getAssessments,
   saveAssessmentRecord,
 } from "../data/assessmentRepository";
+<<<<<<< HEAD
 import { deleteChild, getChildren, saveChild } from "../data/childRepository";
+=======
+import {
+  getChildren,
+  saveChild,
+  deleteChild,
+  replaceChildId as replaceChildIdInRepo,
+} from "../data/childRepository";
+>>>>>>> f0e9383e0ea4f8d1f97a6d60c8a5870feaf5c07b
 import {
   getGamification,
   saveGamification,
@@ -38,6 +47,7 @@ type AppAction =
   | { type: "SET_ACTIVE_CHILD"; payload: string | null }
   | { type: "ADD_CHILD"; payload: ChildProfile }
   | { type: "UPDATE_CHILD"; payload: ChildProfile }
+  | { type: "REPLACE_CHILD_ID"; payload: { oldId: string; child: ChildProfile } }
   | { type: "REMOVE_CHILD"; payload: string }
   | { type: "ADD_ASSESSMENT"; payload: Assessment }
   | { type: "UPDATE_GAMIFICATION"; payload: GamificationState }
@@ -99,6 +109,17 @@ function appReducer(state: AppState, action: AppAction): AppState {
           child.id === action.payload.id ? action.payload : child,
         ),
       };
+    case "REPLACE_CHILD_ID":
+      return {
+        ...state,
+        children: state.children.map((child) =>
+          child.id === action.payload.oldId ? action.payload.child : child,
+        ),
+        activeChildId:
+          state.activeChildId === action.payload.oldId
+            ? action.payload.child.id
+            : state.activeChildId,
+      };
     case "REMOVE_CHILD":
       return {
         ...state,
@@ -123,10 +144,11 @@ interface AppContextValue {
   state: AppState;
   activeChild: ChildProfile | null;
   activeAssessments: Assessment[];
-  signIn: () => void;
-  signOut: () => void;
+  signIn: () => Promise<void>;
+  signOut: () => Promise<void>;
   addChild: (child: ChildProfile) => void;
   updateChild: (child: ChildProfile) => void;
+  replaceChildId: (oldId: string, child: ChildProfile) => void;
   removeChild: (id: string) => void;
   setActiveChild: (id: string | null) => void;
   addAssessment: (assessment: Assessment) => void;
@@ -137,6 +159,28 @@ const AppContext = createContext<AppContextValue | null>(null);
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(appReducer, initialState);
+  const loadScopedState = useCallback(async (): Promise<AppState> => {
+    const childProfiles = await getChildren();
+    const allAssessments = await getAssessments();
+    const storedGamification = await getGamification();
+    const gamification = storedGamification
+      ? {
+          ...storedGamification,
+          level: getLevel(storedGamification.xp).level,
+          levelName: getLevel(storedGamification.xp).name,
+        }
+      : defaultGamification;
+    const auth = isAuthenticated();
+
+    return {
+      children: childProfiles,
+      assessments: allAssessments,
+      activeChildId: childProfiles[0]?.id ?? null,
+      gamification,
+      isAuthenticated: auth,
+      isLoading: false,
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -152,31 +196,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           markInitialized();
         }
 
-        const childProfiles = await getChildren();
-        const allAssessments = await getAssessments();
-        const storedGamification = await getGamification();
-        const gamification = storedGamification
-          ? {
-              ...storedGamification,
-              level: getLevel(storedGamification.xp).level,
-              levelName: getLevel(storedGamification.xp).name,
-            }
-          : defaultGamification;
-        const auth = isAuthenticated();
-
         if (cancelled) return;
-
-        dispatch({
-          type: "INIT",
-          payload: {
-            children: childProfiles,
-            assessments: allAssessments,
-            activeChildId: childProfiles[0]?.id ?? null,
-            gamification,
-            isAuthenticated: auth,
-            isLoading: false,
-          },
-        });
+        const scopedState = await loadScopedState();
+        dispatch({ type: "INIT", payload: scopedState });
       } catch (err) {
         console.error("Failed to initialize app state:", err);
         if (!cancelled) dispatch({ type: "SET_LOADING", payload: false });
@@ -188,7 +210,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadScopedState]);
 
   const addChild = useCallback((child: ChildProfile) => {
     void saveChild(child);
@@ -204,6 +226,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const removeChild = useCallback((id: string) => {
     void deleteChild(id);
     dispatch({ type: "REMOVE_CHILD", payload: id });
+  }, []);
+
+  const replaceChildId = useCallback((oldId: string, child: ChildProfile) => {
+    void replaceChildIdInRepo(oldId, child);
+    dispatch({ type: "REPLACE_CHILD_ID", payload: { oldId, child } });
   }, []);
 
   const setActiveChild = useCallback((id: string | null) => {
@@ -242,29 +269,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     (assessment) => assessment.childId === state.activeChildId,
   );
 
-  const signIn = useCallback(() => {
+  const signIn = useCallback(async () => {
     setAuthenticated(true);
-    dispatch({
-      type: "INIT",
-      payload: {
-        ...state,
-        isAuthenticated: true,
-        isLoading: false,
-      },
-    });
-  }, [state]);
+    const scopedState = await loadScopedState();
+    dispatch({ type: "INIT", payload: scopedState });
+  }, [loadScopedState]);
 
-  const signOut = useCallback(() => {
+  const signOut = useCallback(async () => {
     setAuthenticated(false);
-    dispatch({
-      type: "INIT",
-      payload: {
-        ...state,
-        isAuthenticated: false,
-        isLoading: false,
-      },
-    });
-  }, [state]);
+    const scopedState = await loadScopedState();
+    dispatch({ type: "INIT", payload: scopedState });
+  }, [loadScopedState]);
 
   return (
     <AppContext.Provider
@@ -276,6 +291,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         signOut,
         addChild,
         updateChild,
+        replaceChildId,
         removeChild,
         setActiveChild,
         addAssessment,

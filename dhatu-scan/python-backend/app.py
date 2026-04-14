@@ -662,8 +662,20 @@ def delete_child(child_id: str, current_user: Parent = Depends(get_current_user)
     return {"message": "Child deleted successfully"}
 
 
+<<<<<<< HEAD
 @app.post("/assessment", response_model=ApiAssessmentResponse)
 def generate_assessment(payload: ApiAssessmentRequest, current_user: Parent = Depends(get_current_user), db: Session = Depends(get_db)) -> ApiAssessmentResponse:
+=======
+@app.post("/assessment", response_model=AssessmentResponse)
+def generate_assessment(payload: AssessmentRequest, current_user: Parent = Depends(get_current_user), db: Session = Depends(get_db)) -> AssessmentResponse:
+    child = db.query(Child).filter(
+        Child.child_id == payload.childId,
+        Child.parent_email == current_user.email,
+    ).first()
+    if not child:
+        raise HTTPException(status_code=404, detail="Child not found")
+
+>>>>>>> f0e9383e0ea4f8d1f97a6d60c8a5870feaf5c07b
     who_z, who_status = _who_zscore(payload.anthropometry)
     wasting = _round2(_wasting_score(payload.anthropometry))
     dietary = _round2(_dietary_score(payload.dietary))
@@ -731,7 +743,7 @@ def generate_assessment(payload: ApiAssessmentRequest, current_user: Parent = De
     report = ApiReport(
         id=f"rpt_{db_growth.id}",
         childId=payload.childId,
-        childName=payload.childName,
+        childName=child.child_name,
         createdAt=_to_iso_now(),
         capture=payload.capture,
         scores=ApiScoreBreakdown(

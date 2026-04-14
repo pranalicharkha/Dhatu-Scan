@@ -16,6 +16,7 @@ export type SyncEntityType = "child" | "assessment" | "gamification";
 export type SyncOperation = "upsert" | "delete";
 
 export type LocalChildProfile = ChildProfile & {
+  ownerEmail?: string;
   syncStatus?: SyncStatus;
   lastSyncedAt?: string;
   serverVersion?: number;
@@ -23,6 +24,7 @@ export type LocalChildProfile = ChildProfile & {
 };
 
 export type LocalAssessment = Assessment & {
+  ownerEmail?: string;
   syncStatus?: SyncStatus;
   lastSyncedAt?: string;
   serverVersion?: number;
@@ -31,6 +33,7 @@ export type LocalAssessment = Assessment & {
 
 export type LocalGamificationState = GamificationState & {
   id: "default";
+  ownerEmail?: string;
   syncStatus?: SyncStatus;
   lastSyncedAt?: string;
   serverVersion?: number;
