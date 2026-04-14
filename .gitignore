@@ -19,3 +19,4 @@ Thumbs.db
 *.log
 _tmp*
 node_modules
+dhatu-scan/python-backend/dhatu_scan.db 
