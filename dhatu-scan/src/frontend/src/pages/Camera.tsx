@@ -673,10 +673,8 @@ export default function Camera() {
       });
 
       try {
-        await Promise.all([
-          pose.send({ image: analysisImage }),
-          faceMesh.send({ image: analysisImage }),
-        ]);
+        await pose.send({ image: analysisImage });
+        await faceMesh.send({ image: analysisImage });
       } finally {
         URL.revokeObjectURL(objectUrl);
       }
@@ -724,7 +722,13 @@ export default function Camera() {
         if (faceDetected < 468 || bodyDetected < 33) {
           URL.revokeObjectURL(localUrl);
           setUploadConfirmMsg(
-            "Landmarks incomplete. Please upload another image with full face (468/468) and full body (33/33).",
+            faceDetected === 0 && bodyDetected === 0
+              ? "No face or body landmarks were detected. Upload one clear image of a single child with the full face and full body visible."
+              : faceDetected < 468 && bodyDetected < 33
+                ? "Face and body landmarks are incomplete. Upload one clear image with the full face (468/468) and full body (33/33) visible."
+                : faceDetected < 468
+                  ? `Face landmarks are incomplete (${faceDetected}/468). Upload a clearer front-facing image with the full face visible.`
+                  : `Body landmarks are incomplete (${bodyDetected}/33). Upload a clearer full-body image with the whole child in frame.`,
           );
           return;
         }
@@ -754,6 +758,14 @@ export default function Camera() {
         const message =
           error instanceof Error ? error.message.toLowerCase() : "";
         setUploadConfirmMsg(
+          message.includes("landmark detector failed to initialize") ||
+            message.includes("failed to load script: https://cdn.jsdelivr.net/npm/@mediapipe")
+            ? "The landmark detector could not load. Check your connection and try again."
+            : message.includes("tensorflow.js failed to initialize") ||
+                message.includes("tfhub") ||
+                message.includes("mobilenet")
+              ? "The TensorFlow image model could not load, so image analysis could not finish."
+              :
           message.includes("module.arguments") ||
             message.includes("aborted(") ||
             message.includes("opencv")
@@ -1327,7 +1339,7 @@ export default function Camera() {
               <img
                 src={uploadPreviewUrl}
                 alt="Uploaded preview"
-                className="w-full h-56 object-cover rounded-lg"
+                className="w-full h-56 object-contain rounded-lg bg-black/10"
               />
             </div>
           )}

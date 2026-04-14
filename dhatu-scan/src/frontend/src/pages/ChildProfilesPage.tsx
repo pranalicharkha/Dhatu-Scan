@@ -98,7 +98,7 @@ export default function ChildProfilesPage() {
       childId: localProfile.id,
       parentEmail: "",
       childName: localProfile.name,
-      dob: localProfile.dateOfBirth,
+      dob: localProfile.dateOfBirth ?? "",
       gender: localProfile.gender,
     });
 

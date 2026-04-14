@@ -34,6 +34,70 @@ const WHO_STATUS_COPY: Record<WHOStatus, string> = {
     "Weight-for-height is far below the WHO standard and suggests severe wasting.",
 };
 
+const WATER_SOURCE_COPY: Record<number, string> = {
+  10: "Tap / piped water",
+  7: "Borehole / well water",
+  3: "Surface water",
+  0: "Unprotected water source",
+};
+
+function getImageRiskLabel(score: number) {
+  if (score <= 30) return { label: "Low visual risk", color: "#8f85b3" };
+  if (score <= 60) return { label: "Moderate visual risk", color: "#9b8faf" };
+  return { label: "High visual risk", color: "#7f748f" };
+}
+
+function getQualityLabel(score: number) {
+  if (score >= 80) return "Good";
+  if (score >= 60) return "Fair";
+  return "Needs recapture";
+}
+
+function AnalysisMetric({
+  label,
+  value,
+  tone = "default",
+}: {
+  label: string;
+  value: string;
+  tone?: "default" | "good" | "warn" | "bad";
+}) {
+  const toneClass =
+    tone === "good"
+      ? "border-border/50 bg-background/40 text-foreground"
+      : tone === "warn"
+        ? "border-border/50 bg-background/38 text-foreground"
+        : tone === "bad"
+          ? "border-border/50 bg-background/36 text-foreground"
+          : "border-border/40 bg-background/30 text-foreground";
+
+  return (
+    <div className={`rounded-2xl border px-3 py-3 ${toneClass}`}>
+      <div className="text-[11px] uppercase tracking-wide opacity-80">{label}</div>
+      <div className="mt-1 text-sm font-semibold">{value}</div>
+    </div>
+  );
+}
+
+function ReportRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4 border-b border-border/40 py-3 last:border-b-0 last:pb-0 first:pt-0">
+      <div className="text-xs uppercase tracking-wide text-muted-foreground">
+        {label}
+      </div>
+      <div className="text-right text-sm font-medium text-foreground">
+        {value}
+      </div>
+    </div>
+  );
+}
+
 function ScoreGauge({
   value,
   label,
@@ -343,15 +407,15 @@ function RecommendationCard({
   const priorityConfig = {
     high: {
       label: "High Priority",
-      class: "bg-red-500/20 text-red-400 border-red-500/30",
+      class: "bg-background/40 text-foreground border-border/50",
     },
     medium: {
       label: "Medium Priority",
-      class: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+      class: "bg-background/40 text-foreground border-border/50",
     },
     low: {
       label: "Good Practice",
-      class: "bg-green-500/20 text-green-400 border-green-500/30",
+      class: "bg-background/40 text-foreground border-border/50",
     },
   };
   const cfg = priorityConfig[rec.priority];
@@ -364,23 +428,20 @@ function RecommendationCard({
       variant="elevated"
       className="p-4"
     >
-      <div className="flex gap-3 items-start">
-        <div className="text-3xl flex-shrink-0 mt-0.5">{rec.icon}</div>
-        <div className="flex-1 min-w-0">
-          <div className="flex flex-wrap items-center gap-2 mb-1">
-            <h4 className="font-semibold text-foreground text-sm">
-              {rec.title}
-            </h4>
-            <span
-              className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ${cfg.class}`}
-            >
-              {cfg.label}
-            </span>
-          </div>
-          <p className="text-xs text-muted-foreground leading-relaxed">
-            {rec.description}
-          </p>
+      <div className="flex-1 min-w-0">
+        <div className="flex flex-wrap items-center gap-2 mb-1">
+          <h4 className="font-semibold text-foreground text-sm">
+            {rec.title}
+          </h4>
+          <span
+            className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ${cfg.class}`}
+          >
+            {cfg.label}
+          </span>
         </div>
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          {rec.description}
+        </p>
       </div>
     </GlassCard>
   );
@@ -410,7 +471,6 @@ function TipCard({
         aria-expanded={open}
       >
         <div className="flex items-center gap-3">
-          <span className="text-2xl">{tip.icon}</span>
           <span className="font-medium text-foreground text-sm">
             {tip.title}
           </span>
@@ -681,6 +741,9 @@ export default function Results() {
       : a.dietaryScore <= 60
         ? "#f59e0b"
         : "#ef4444";
+  const imageRisk = a.imageRiskScore ?? 0;
+  const imageQuality = a.imageQualityScore ?? 0;
+  const imageRiskMeta = getImageRiskLabel(imageRisk);
 
   const handleDownload = () => {
     const report = {
@@ -693,6 +756,26 @@ export default function Results() {
         finalScore: a.finalScore,
       },
       riskLevel: riskCategory.label,
+      reportSections: {
+        imageAnalysis: {
+          imageRiskScore: imageRisk,
+          imageQualityScore: imageQuality,
+          modelConfidence: a.cameraConfidence ?? 0,
+          faceMasked: a.faceMasked ?? false,
+          bodyLandmarksDetected: a.bodyLandmarksDetected ?? 0,
+          faceLandmarksDetected: a.faceLandmarksDetected ?? 0,
+        },
+        userInfoAnalysis: {
+          ageMonths: a.age,
+          heightCm: a.height,
+          weightKg: a.weight,
+          dietaryScore: a.dietaryScore,
+          dietDiversity: a.dietDiversity,
+          waterSource: WATER_SOURCE_COPY[a.waterSource] ?? "Unknown",
+          recentDiarrheaScore: a.recentDiarrhea,
+          whoStatus: a.whoStatus,
+        },
+      },
       whoZScore: a.whoZScore,
       whoStatus: a.whoStatus,
       whoIndicators: {
@@ -735,27 +818,27 @@ export default function Results() {
             style={{ background: riskColor, filter: "blur(30px)" }}
           />
           <div className="relative z-10">
-            <div className="flex items-center gap-3 mb-2">
-              <span className="text-3xl">{riskCfg.emoji}</span>
-              <div>
-                <div
-                  className="text-xs font-semibold uppercase tracking-widest mb-0.5"
-                  style={{ color: riskColor }}
-                >
-                  Assessment Result
-                </div>
-                <h1
-                  className="font-display font-bold text-2xl leading-tight"
-                  style={{ color: riskColor }}
-                >
-                  {riskCategory.label}
-                </h1>
+            <div className="mb-2">
+              <div
+                className="text-xs font-semibold uppercase tracking-widest mb-0.5"
+                style={{ color: riskColor }}
+              >
+                Assessment Result
               </div>
+              <h1
+                className="font-display font-bold text-2xl leading-tight"
+                style={{ color: riskColor }}
+              >
+                {riskCategory.label}
+              </h1>
             </div>
             <p className="text-sm text-foreground/80 mb-3">
               {riskCategory.description}
             </p>
-            <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+            <div
+              className="hidden flex-wrap gap-3 text-xs text-muted-foreground"
+              aria-hidden="true"
+            >
               <span className="flex items-center gap-1.5">
                 👤 <strong className="text-foreground">{childName}</strong>
               </span>
@@ -765,6 +848,20 @@ export default function Results() {
               {assessment.cameraAnalyzed && assessment.cameraConfidence && (
                 <span className="flex items-center gap-1.5">
                   📷 AI Confidence:{" "}
+                  <strong className="text-primary">
+                    {assessment.cameraConfidence}%
+                  </strong>
+                </span>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+              <span>
+                <strong className="text-foreground">{childName}</strong>
+              </span>
+              <span>{assessmentDate}</span>
+              {assessment.cameraAnalyzed && assessment.cameraConfidence && (
+                <span>
+                  AI Confidence:{" "}
                   <strong className="text-primary">
                     {assessment.cameraConfidence}%
                   </strong>
@@ -815,6 +912,7 @@ export default function Results() {
         </GlassCard>
 
         {/* ── WHO Z-Score Card ── */}
+        <div className="hidden" aria-hidden="true">
         <GlassCard animate delay={0.15} variant="elevated" className="p-6">
           <div className="flex items-start gap-4" data-ocid="who-zscore-card">
             <WHOPie
@@ -908,6 +1006,169 @@ export default function Results() {
           </div>
         </GlassCard>
 
+        <div className="grid gap-4 lg:grid-cols-2">
+          <GlassCard animate delay={0.18} variant="elevated" className="p-6">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <h2 className="font-display font-semibold text-foreground">
+                  Image Analysis
+                </h2>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  Visual findings from the uploaded or captured image.
+                </p>
+              </div>
+              <Badge
+                variant="outline"
+                className="text-[10px] px-2 py-0.5 border font-medium"
+                style={{
+                  color: imageRiskMeta.color,
+                  borderColor: `${imageRiskMeta.color}50`,
+                  background: `${imageRiskMeta.color}15`,
+                }}
+              >
+                {imageRiskMeta.label.toUpperCase()}
+              </Badge>
+            </div>
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <AnalysisMetric
+                label="Image Risk"
+                value={`${imageRisk}/100`}
+                tone={
+                  imageRisk <= 30 ? "good" : imageRisk <= 60 ? "warn" : "bad"
+                }
+              />
+              <AnalysisMetric
+                label="Image Quality"
+                value={`${imageQuality}/100 · ${getQualityLabel(imageQuality)}`}
+                tone={
+                  imageQuality >= 80 ? "good" : imageQuality >= 60 ? "warn" : "bad"
+                }
+              />
+              <AnalysisMetric
+                label="Landmarks"
+                value={`${a.faceLandmarksDetected ?? 0}/468 face · ${a.bodyLandmarksDetected ?? 0}/33 body`}
+                tone={
+                  (a.faceLandmarksDetected ?? 0) >= 468 &&
+                  (a.bodyLandmarksDetected ?? 0) >= 33
+                    ? "good"
+                    : "warn"
+                }
+              />
+              <AnalysisMetric
+                label="Face Masking"
+                value={a.faceMasked ? "Applied" : "Not confirmed"}
+              />
+            </div>
+          </GlassCard>
+
+          <GlassCard animate delay={0.2} variant="elevated" className="p-6">
+            <div>
+              <h2 className="font-display font-semibold text-foreground">
+                User Info Analysis
+              </h2>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                Child measurements and submitted health inputs.
+              </p>
+            </div>
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <AnalysisMetric label="Age At Assessment" value={`${a.age} months`} />
+              <AnalysisMetric label="Measurements" value={`${a.height} cm · ${a.weight} kg`} />
+              <AnalysisMetric
+                label="Dietary Risk"
+                value={`${a.dietaryScore}/100`}
+                tone={
+                  a.dietaryScore <= 30
+                    ? "good"
+                    : a.dietaryScore <= 60
+                      ? "warn"
+                      : "bad"
+                }
+              />
+              <AnalysisMetric
+                label="Diet Diversity"
+                value={`${a.dietDiversity}/10`}
+                tone={
+                  a.dietDiversity >= 7 ? "good" : a.dietDiversity >= 4 ? "warn" : "bad"
+                }
+              />
+            </div>
+          </GlassCard>
+        </div>
+
+        <GlassCard
+          animate
+          delay={0.22}
+          variant="elevated"
+          className="hidden p-6"
+          aria-hidden="true"
+        >
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <h2 className="font-display font-semibold text-foreground">
+                Combined Analysis
+              </h2>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                Final merged interpretation of all screening inputs.
+              </p>
+            </div>
+            <Badge
+              variant="outline"
+              className="text-[10px] px-2 py-0.5 border font-medium"
+              style={{
+                color: riskColor,
+                borderColor: `${riskColor}50`,
+                background: `${riskColor}15`,
+              }}
+            >
+              {riskCategory.label.toUpperCase()}
+            </Badge>
+          </div>
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <AnalysisMetric
+              label="WHO / Anthropometry"
+              value={`${a.whoStatus.replace(/_/g, " ")}`}
+              tone={
+                a.whoStatus === "normal"
+                  ? "good"
+                  : a.whoStatus.includes("severe")
+                    ? "bad"
+                    : "warn"
+              }
+            />
+            <AnalysisMetric
+              label="Fusion Score"
+              value={`${a.finalScore}/100`}
+              tone={
+                a.finalScore <= 30 ? "good" : a.finalScore <= 60 ? "warn" : "bad"
+              }
+            />
+            <AnalysisMetric
+              label="Overall Risk"
+              value={riskCategory.label}
+              tone={
+                a.riskLevel === "low"
+                  ? "good"
+                  : a.riskLevel === "moderate"
+                    ? "warn"
+                    : "bad"
+              }
+            />
+          </div>
+          <div className="mt-4 rounded-2xl border border-border/40 bg-background/30 p-4">
+            <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+              Combined Summary
+            </div>
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+              {""}
+            </p>
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+              Image: <span className="text-foreground">{imageRiskMeta.label.toLowerCase()}</span>.
+              {" "}User info: <span className="text-foreground">{riskCategory.label.toLowerCase()}</span>.
+              {" "}WHO: <span className="text-foreground">{a.whoStatus.replace(/_/g, " ")}</span>.
+            </p>
+          </div>
+        </GlassCard>
+
         {/* ── Recommendations ── */}
         <div>
           <motion.h2
@@ -916,7 +1177,7 @@ export default function Results() {
             animate={{ opacity: 1 }}
             transition={{ delay: 0.3 }}
           >
-            <span>💡</span> Recommendations
+            Recommendations
           </motion.h2>
           <div className="grid gap-3" data-ocid="recommendations-list">
             {recommendations.map((rec, i) => (
@@ -933,7 +1194,7 @@ export default function Results() {
             animate={{ opacity: 1 }}
             transition={{ delay: 0.4 }}
           >
-            <span>📌</span> Improvement Suggestions
+            Improvement Suggestions
           </motion.h2>
           <div className="space-y-3" data-ocid="improvement-tips">
             {IMPROVEMENT_TIPS.map((tip, i) => (
@@ -943,6 +1204,201 @@ export default function Results() {
         </div>
 
         {/* ── Action Buttons ── */}
+        </div>
+
+        <GlassCard animate delay={0.15} variant="elevated" className="p-6">
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <h2 className="font-display font-semibold text-foreground">
+                Growth Assessment
+              </h2>
+              <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                WHO growth interpretation based on the child&apos;s measurements at this visit.
+              </p>
+            </div>
+            <Badge
+              variant="outline"
+              className="text-[10px] px-2 py-0.5 border font-medium"
+              style={{
+                color: whoColor,
+                borderColor: `${whoColor}50`,
+                background: `${whoColor}15`,
+              }}
+            >
+              {(assessment.stuntingStatus ?? assessment.whoStatus)
+                .replace(/_/g, " ")
+                .toUpperCase()}
+            </Badge>
+          </div>
+          <p className="mt-4 text-sm leading-relaxed text-foreground/85">
+            {WHO_STATUS_COPY[assessment.whoStatus]}
+          </p>
+          <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_220px]">
+            <div className="rounded-2xl border border-border/50 bg-background/30 p-4">
+              <ReportRow
+                label="Underweight (WAZ)"
+                value={`${(assessment.waz ?? assessment.whoZScore).toFixed(2)} · ${(assessment.underweightStatus ?? assessment.whoStatus).replace(/_/g, " ")}`}
+              />
+              <ReportRow
+                label="Stunting (HAZ)"
+                value={`${(assessment.haz ?? assessment.whoZScore).toFixed(2)} · ${(assessment.stuntingStatus ?? assessment.whoStatus).replace(/_/g, " ")}`}
+              />
+              <ReportRow
+                label="Wasting (WHZ)"
+                value={`${(assessment.whz ?? assessment.whoZScore).toFixed(2)} · ${(assessment.wastingStatus ?? assessment.whoStatus).replace(/_/g, " ")}`}
+              />
+              <ReportRow
+                label="BMI For Age (BAZ)"
+                value={`${(
+                  assessment.baz ??
+                  Number(
+                    (assessment.weight / (assessment.height / 100) ** 2).toFixed(2),
+                  )
+                ).toFixed(2)}`}
+              />
+            </div>
+            <div className="rounded-2xl border border-border/50 bg-background/30 p-4">
+              <WHOPie
+                zScore={assessment.haz ?? assessment.whoZScore}
+                color={whoColor}
+              />
+              <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
+                Scores below -2 suggest concern and scores below -3 indicate severe risk.
+              </p>
+            </div>
+          </div>
+        </GlassCard>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <GlassCard animate delay={0.18} variant="elevated" className="p-6">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <h2 className="font-display font-semibold text-foreground">
+                  Image Analysis
+                </h2>
+                <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                  Upload quality and landmark detection from the submitted image.
+                </p>
+              </div>
+              <Badge
+                variant="outline"
+                className="text-[10px] px-2 py-0.5 border font-medium"
+                style={{
+                  color: imageRiskMeta.color,
+                  borderColor: `${imageRiskMeta.color}50`,
+                  background: `${imageRiskMeta.color}15`,
+                }}
+              >
+                {imageRiskMeta.label}
+              </Badge>
+            </div>
+            <div className="mt-5 rounded-2xl border border-border/50 bg-background/30 p-4">
+              <ReportRow label="Image Risk" value={`${imageRisk}/100`} />
+              <ReportRow
+                label="Image Quality"
+                value={`${imageQuality}/100 · ${getQualityLabel(imageQuality)}`}
+              />
+              <ReportRow
+                label="Landmarks"
+                value={`${a.faceLandmarksDetected ?? 0}/468 face, ${a.bodyLandmarksDetected ?? 0}/33 body`}
+              />
+              <ReportRow
+                label="Face Masking"
+                value={a.faceMasked ? "Applied" : "Not confirmed"}
+              />
+            </div>
+          </GlassCard>
+
+          <GlassCard animate delay={0.2} variant="elevated" className="p-6">
+            <div>
+              <h2 className="font-display font-semibold text-foreground">
+                Child Information
+              </h2>
+              <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                Measurements and submitted health details used in this assessment.
+              </p>
+            </div>
+            <div className="mt-5 rounded-2xl border border-border/50 bg-background/30 p-4">
+              <ReportRow label="Age At Assessment" value={`${a.age} months`} />
+              <ReportRow label="Height" value={`${a.height} cm`} />
+              <ReportRow label="Weight" value={`${a.weight} kg`} />
+              <ReportRow label="Dietary Risk" value={`${a.dietaryScore}/100`} />
+              <ReportRow label="Diet Diversity" value={`${a.dietDiversity}/10`} />
+              <ReportRow
+                label="Water Source"
+                value={WATER_SOURCE_COPY[a.waterSource] ?? "Unknown"}
+              />
+            </div>
+          </GlassCard>
+        </div>
+
+        <GlassCard animate delay={0.24} variant="elevated" className="p-6">
+          <h2 className="font-display font-semibold text-foreground">
+            Guidance
+          </h2>
+          <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+            Recommendations and practical next steps for follow-up care at home and with a health worker.
+          </p>
+          <div className="mt-5 space-y-5">
+            <div data-ocid="recommendations-list">
+              <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                Recommendations
+              </div>
+              <ul className="mt-3 space-y-3">
+                {recommendations.map((rec) => (
+                  <li
+                    key={rec.title}
+                    className="rounded-2xl border border-border/40 bg-background/25 px-4 py-3"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-sm font-medium text-foreground">
+                        {rec.title}
+                      </div>
+                      <span className="rounded-full border border-border/50 bg-background/40 px-2 py-0.5 text-[10px] font-medium text-foreground">
+                        {rec.priority === "high"
+                          ? "High priority"
+                          : rec.priority === "medium"
+                            ? "Medium priority"
+                            : "Good practice"}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                      {rec.description}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div data-ocid="improvement-tips">
+              <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                Improvement Suggestions
+              </div>
+              <div className="mt-3 space-y-4">
+                {IMPROVEMENT_TIPS.map((tip) => (
+                  <div
+                    key={tip.id}
+                    className="rounded-2xl border border-border/40 bg-background/25 px-4 py-3"
+                  >
+                    <div className="text-sm font-medium text-foreground">
+                      {tip.title}
+                    </div>
+                    <ul className="mt-2 space-y-2">
+                      {tip.tips.map((item) => (
+                        <li
+                          key={item}
+                          className="text-sm leading-relaxed text-muted-foreground"
+                        >
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </GlassCard>
+
         <GlassCard animate delay={0.2} variant="default" className="p-4">
           <div
             className="grid grid-cols-2 gap-3"
@@ -951,7 +1407,7 @@ export default function Results() {
             <Button
               variant="outline"
               size="sm"
-              className="gap-2 text-xs border-border/60"
+              className="gap-2 text-xs border-border/60 [&_span:first-child]:hidden"
               onClick={handleDownload}
               data-ocid="download-report-btn"
             >
@@ -964,12 +1420,12 @@ export default function Results() {
               onClick={() => setRecheckOpen(true)}
               data-ocid="recheck-reminder-btn"
             >
-              <span>🔔</span> Set Reminder
+              Set Reminder
             </Button>
             <Button
               variant="ghost"
               size="sm"
-              className="gap-2 text-xs text-primary hover:text-primary"
+              className="gap-2 text-xs text-primary hover:text-primary [&_span:first-child]:hidden"
               onClick={() => navigate({ to: "/history" })}
               data-ocid="view-history-btn"
             >
@@ -977,7 +1433,7 @@ export default function Results() {
             </Button>
             <Button
               size="sm"
-              className="gap-2 text-xs gradient-teal text-primary-foreground border-0"
+              className="gap-2 text-xs gradient-teal text-primary-foreground border-0 [&_span:first-child]:hidden"
               onClick={() => navigate({ to: "/form" })}
               data-ocid="new-assessment-btn"
             >

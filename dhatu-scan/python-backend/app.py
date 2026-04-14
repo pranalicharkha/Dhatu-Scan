@@ -396,6 +396,30 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
 from database import engine, Base, get_db
 from models import Parent, Child, GrowthEntry, Assessment, Streak
+from preprocess import (
+    apply_face_mask,
+    decode_upload_image,
+    dependencies_ready as preprocess_dependencies_ready,
+    save_masked_image,
+)
+from inference import analyze_visible_signs, extract_embedding
+from fusion import (
+    build_assessment_summary,
+    calculate_fusion_score,
+    risk_from_score,
+)
+from schemas import (
+    AssessmentRequest as ApiAssessmentRequest,
+    AssessmentResponse as ApiAssessmentResponse,
+    GuidanceResponse as ApiGuidanceResponse,
+    GuidanceTip as ApiGuidanceTip,
+    ImageAssessment,
+    LandmarkVisibility as ApiLandmarkVisibility,
+    MaskedImageReference,
+    Report as ApiReport,
+    ScoreBreakdown as ApiScoreBreakdown,
+    UploadImageResponse as ApiUploadImageResponse,
+)
 Base.metadata.create_all(bind=engine)
 
 def verify_password(plain_password, hashed_password):
@@ -444,52 +468,65 @@ def training_source() -> dict[str, str]:
     return {"datasetUrl": TRAINING_DATASET_URL}
 
 
-@app.post("/upload-image", response_model=UploadImageResponse)
+@app.post("/upload-image", response_model=ApiUploadImageResponse)
 async def upload_image(
     childId: str = Form(...),
     mode: CaptureMode = Form(...),
     phase: Literal["face", "body", "upload"] = Form(...),
     image: UploadFile = File(...),
-) -> UploadImageResponse:
+) -> ApiUploadImageResponse:
     content = await image.read()
     if not content:
         raise HTTPException(status_code=400, detail="Empty file uploaded")
 
-    if cv2 is None or np is None:
-        # Mocking for environments where OpenCV/Numpy fail to compile
-        return UploadImageResponse(
+    if not preprocess_dependencies_ready():
+        image_assessment = analyze_visible_signs(
+            embedding_dim=576,
+            quality_score=65,
+            face_masked=False,
+            visible_signs=[],
+        )
+        return ApiUploadImageResponse(
             success=True,
             message="Mock image successfully uploaded",
             mode=mode,
             phase=phase,
             maskedImagePath="/mock/path.jpg",
             embeddingDim=576,
+            imageAssessment=image_assessment,
         )
 
-    np_bytes = np.frombuffer(content, dtype=np.uint8)
-    decoded = cv2.imdecode(np_bytes, cv2.IMREAD_COLOR)
+    decoded = decode_upload_image(content)
     if decoded is None:
         raise HTTPException(status_code=400, detail="Invalid image format")
 
-    masked = _mask_face_bgr(decoded)
-    embedding = _extract_embedding(masked)
+    masked, face_masked = apply_face_mask(decoded)
+    embedding = extract_embedding(masked)
+    embedding_dim = int(embedding.shape[0]) if hasattr(embedding, "shape") else len(embedding)
+    masked_path = save_masked_image(masked, childId, phase, _masked_dir)
+    visible_signs: list[str] = []
+    if embedding_dim > 0:
+        visible_signs = ["Backend image processed", "Masked image retained"]
+    image_assessment = analyze_visible_signs(
+        embedding_dim=embedding_dim,
+        quality_score=82 if face_masked else 68,
+        face_masked=face_masked,
+        visible_signs=visible_signs,
+    )
 
-    masked_name = f"{childId}_{phase}_{uuid4().hex}.jpg"
-    masked_path = _masked_dir / masked_name
-    cv2.imwrite(str(masked_path), masked)
-
-    return UploadImageResponse(
+    return ApiUploadImageResponse(
         success=True,
-        message="Image successfully uploaded",
+        message="Image successfully uploaded and analyzed",
         mode=mode,
         phase=phase,
-        maskedImagePath=str(masked_path),
-        embeddingDim=int(embedding.shape[0]),
+        maskedImagePath=masked_path,
+        embeddingDim=embedding_dim,
+        imageAssessment=image_assessment,
     )
 
 
-@app.post("/guidance", response_model=GuidanceResponse)
-def evaluate_guidance(payload: LandmarkVisibility) -> GuidanceResponse:
+@app.post("/guidance", response_model=ApiGuidanceResponse)
+def evaluate_guidance(payload: ApiLandmarkVisibility) -> ApiGuidanceResponse:
     body_cov = 1.0 if payload.bodyRequired <= 0 else min(payload.bodyDetected, payload.bodyRequired) / payload.bodyRequired
     face_cov = 1.0 if payload.faceRequired <= 0 else min(payload.faceDetected, payload.faceRequired) / payload.faceRequired
 
@@ -503,23 +540,23 @@ def evaluate_guidance(payload: LandmarkVisibility) -> GuidanceResponse:
         + (0.04 if payload.headVisible and payload.feetVisible else 0.0)
     )
     score = int(_clamp(weighted * 100.0, 0.0, 100.0))
-    tips: list[GuidanceTip] = []
+    tips: list[ApiGuidanceTip] = []
     if body_cov < 0.85:
-        tips.append(GuidanceTip(message="Adjust framing: at least 33 body landmarks must be visible.", severity="critical"))
+        tips.append(ApiGuidanceTip(message="Adjust framing: at least 33 body landmarks must be visible.", severity="critical"))
     if face_cov < 0.85:
-        tips.append(GuidanceTip(message="Adjust face angle/lighting so all 468 facial landmarks are detected.", severity="warning"))
+        tips.append(ApiGuidanceTip(message="Adjust face angle/lighting so all 468 facial landmarks are detected.", severity="warning"))
     if not payload.fullBodyVisible:
-        tips.append(GuidanceTip(message="Ensure full body is in frame before capture.", severity="critical"))
+        tips.append(ApiGuidanceTip(message="Ensure full body is in frame before capture.", severity="critical"))
     if not payload.headVisible or not payload.feetVisible:
-        tips.append(GuidanceTip(message="Head and feet should both be visible for accurate anthropometry.", severity="warning"))
+        tips.append(ApiGuidanceTip(message="Head and feet should both be visible for accurate anthropometry.", severity="warning"))
     if not payload.centered:
-        tips.append(GuidanceTip(message="Move child to center of frame.", severity="info"))
+        tips.append(ApiGuidanceTip(message="Move child to center of frame.", severity="info"))
     if not payload.distanceOk:
-        tips.append(GuidanceTip(message="Step back to roughly 2 meters for full-body capture.", severity="info"))
+        tips.append(ApiGuidanceTip(message="Step back to roughly 2 meters for full-body capture.", severity="info"))
     if not payload.adequateLighting:
-        tips.append(GuidanceTip(message="Increase lighting to improve landmark and mask quality.", severity="warning"))
+        tips.append(ApiGuidanceTip(message="Increase lighting to improve landmark and mask quality.", severity="warning"))
     if not tips:
-        tips.append(GuidanceTip(message="Capture conditions are good. Proceed with scan.", severity="info"))
+        tips.append(ApiGuidanceTip(message="Capture conditions are good. Proceed with scan.", severity="info"))
 
     can_capture = (
         score >= 80
@@ -529,7 +566,7 @@ def evaluate_guidance(payload: LandmarkVisibility) -> GuidanceResponse:
         and payload.headVisible
         and payload.feetVisible
     )
-    return GuidanceResponse(readinessScore=score, canCapture=can_capture, tips=tips)
+    return ApiGuidanceResponse(readinessScore=score, canCapture=can_capture, tips=tips)
 
 
 @app.post("/auth/register")
@@ -625,13 +662,35 @@ def delete_child(child_id: str, current_user: Parent = Depends(get_current_user)
     return {"message": "Child deleted successfully"}
 
 
-@app.post("/assessment", response_model=AssessmentResponse)
-def generate_assessment(payload: AssessmentRequest, current_user: Parent = Depends(get_current_user), db: Session = Depends(get_db)) -> AssessmentResponse:
+@app.post("/assessment", response_model=ApiAssessmentResponse)
+def generate_assessment(payload: ApiAssessmentRequest, current_user: Parent = Depends(get_current_user), db: Session = Depends(get_db)) -> ApiAssessmentResponse:
     who_z, who_status = _who_zscore(payload.anthropometry)
     wasting = _round2(_wasting_score(payload.anthropometry))
     dietary = _round2(_dietary_score(payload.dietary))
-    fusion = _round2(_fusion_score(wasting, dietary, payload.capture.embeddingRiskHint))
-    risk = _risk(fusion)
+    image_assessment: ImageAssessment | None = None
+    masked_image_ref: MaskedImageReference | None = None
+
+    if payload.maskedImage is not None:
+      if isinstance(payload.maskedImage, dict):
+        masked_image_ref = MaskedImageReference(**payload.maskedImage)
+      elif hasattr(payload.maskedImage, "path") or hasattr(payload.maskedImage, "dataUrl"):
+        masked_image_ref = MaskedImageReference.model_validate(payload.maskedImage)
+
+    if payload.capture.visibleSigns or payload.capture.qualityScore is not None:
+        image_assessment = analyze_visible_signs(
+            embedding_dim=576,
+            quality_score=payload.capture.qualityScore or 70,
+            face_masked=payload.capture.faceMasked,
+            visible_signs=payload.capture.visibleSigns,
+        )
+
+    fusion = calculate_fusion_score(
+        wasting,
+        dietary,
+        image_assessment,
+        payload.capture.embeddingRiskHint,
+    )
+    risk = risk_from_score(fusion)
 
     # Save Assessment to DB
     lifestyle_details_str = json.dumps({
@@ -648,7 +707,7 @@ def generate_assessment(payload: AssessmentRequest, current_user: Parent = Depen
     db.add(db_assessment)
     
     # Save GrowthEntry to DB
-    mocked_image_url = f"/masked_images/{payload.childId}_upload.jpg" if payload.maskedImage else None
+    mocked_image_url = masked_image_ref.path if masked_image_ref else None
     
     db_growth = GrowthEntry(
         child_id=payload.childId,
@@ -669,13 +728,13 @@ def generate_assessment(payload: AssessmentRequest, current_user: Parent = Depen
     
     db.commit()
 
-    report = Report(
+    report = ApiReport(
         id=f"rpt_{db_growth.id}",
         childId=payload.childId,
         childName=payload.childName,
         createdAt=_to_iso_now(),
         capture=payload.capture,
-        scores=ScoreBreakdown(
+        scores=ApiScoreBreakdown(
             whoZScore=who_z,
             whoStatus=who_status,
             wastingScore=wasting,
@@ -683,15 +742,15 @@ def generate_assessment(payload: AssessmentRequest, current_user: Parent = Depen
             fusionScore=fusion,
             riskLevel=risk,
         ),
-        summary="",
+        summary=build_assessment_summary(who_status, risk, image_assessment),
         recommendations=_recommendations(risk),
-        maskedImage=payload.maskedImage,
+        maskedImage=masked_image_ref,
+        imageAssessment=image_assessment,
     )
-    report.summary = _summary(report)
 
-    return AssessmentResponse(
+    return ApiAssessmentResponse(
         report=report,
-        privacyNote="Original image is discarded immediately. Only face-masked image URL is securely stored in Cloud.",
+        privacyNote="Original image is discarded immediately. Only face-masked image metadata is retained when explicitly provided.",
     )
 
 
