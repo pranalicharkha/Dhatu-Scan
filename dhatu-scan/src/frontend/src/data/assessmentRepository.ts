@@ -41,6 +41,7 @@ export async function getAssessments(): Promise<LocalAssessment[]> {
     (store) => store.getAll(),
   );
 
+  // STRICT: Only show assessments for this parent's children
   return assessments
     .filter(
       (assessment) =>
@@ -62,6 +63,7 @@ export async function getAssessmentsByChild(
     index.getAll(childId),
   );
 
+  // STRICT: Only show assessments for this parent's child
   return assessments
     .filter(
       (assessment) =>
@@ -82,6 +84,7 @@ export async function getAssessment(
     (store) => store.get(id),
   );
 
+  // STRICT: Only return if belongs to this parent
   return assessment && !assessment.deleted && assessment.ownerEmail === ownerEmail
     ? assessment
     : null;
@@ -132,6 +135,7 @@ export async function getPendingAssessments(): Promise<LocalAssessment[]> {
     index.getAll("pending"),
   );
 
+  // STRICT: Only return pending assessments for this parent
   return assessments.filter(
     (assessment) => !assessment.deleted && assessment.ownerEmail === ownerEmail,
   );

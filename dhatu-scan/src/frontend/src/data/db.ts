@@ -1,7 +1,7 @@
 import type { Assessment, ChildProfile, GamificationState } from "@/types";
 
 export const DB_NAME = "dhatu-scan-db";
-export const DB_VERSION = 2;
+export const DB_VERSION = 4;
 
 export const STORES = {
   children: "children",
@@ -9,6 +9,9 @@ export const STORES = {
   gamification: "gamification",
   syncQueue: "syncQueue",
   scans: "scans",
+  currentUser: "currentUser",
+  growthHistory: "growthHistory",
+  streaks: "streaks",
 } as const;
 
 export type SyncStatus = "pending" | "synced" | "failed";
@@ -48,6 +51,37 @@ export interface SyncQueueItem {
   createdAt: string;
   retryCount: number;
   lastError?: string;
+}
+
+// Types migrated from lib/db.ts (Dexie)
+export interface CurrentUser {
+  id: number; // Always 1
+  email: string;
+  auth_token: string;
+  full_name: string;
+}
+
+export interface Scan {
+  id: string; // uuid
+  capturedImage: Blob;
+  faceBlurStatus: string;
+  bodyLandmarks: number;
+}
+
+export interface GrowthHistory {
+  id: string;
+  childId: string;
+  zScore: number;
+  height: number;
+  weight: number;
+  date: string;
+}
+
+export interface Streak {
+  id: string;
+  parentEmail: string;
+  streakCount: number;
+  badges: string[];
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -132,6 +166,34 @@ function upgradeDb(db: IDBDatabase) {
 
   ensureStore(db, STORES.scans, { keyPath: "id" });
 
+  // New stores from consolidated lib/db.ts
+  const currentUserStore = ensureStore(db, STORES.currentUser, {
+    keyPath: "id",
+  });
+  if (currentUserStore) {
+    createIndexes(currentUserStore, [
+      { name: "email", keyPath: "email" },
+    ]);
+  }
+
+  const growthHistoryStore = ensureStore(db, STORES.growthHistory, {
+    keyPath: "id",
+  });
+  if (growthHistoryStore) {
+    createIndexes(growthHistoryStore, [
+      { name: "childId", keyPath: "childId" },
+      { name: "date", keyPath: "date" },
+    ]);
+  }
+
+  const streaksStore = ensureStore(db, STORES.streaks, {
+    keyPath: "id",
+  });
+  if (streaksStore) {
+    createIndexes(streaksStore, [
+      { name: "parentEmail", keyPath: "parentEmail" },
+    ]);
+  }
 }
 
 export function getDb(): Promise<IDBDatabase> {

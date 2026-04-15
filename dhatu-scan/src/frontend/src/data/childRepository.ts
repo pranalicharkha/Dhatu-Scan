@@ -41,6 +41,8 @@ export async function getChildren(): Promise<LocalChildProfile[]> {
     (store) => store.getAll(),
   );
 
+  // STRICT: Only show children that belong to this parent's email
+  // This ensures data isolation between different parent accounts
   const scopedChildren = children.filter(
     (child) => !child.deleted && child.ownerEmail === ownerEmail,
   );
@@ -73,6 +75,7 @@ export async function getChild(id: string): Promise<LocalChildProfile | null> {
     (store) => store.get(id),
   );
 
+  // STRICT: Only return child if it belongs to this parent
   return child && !child.deleted && child.ownerEmail === ownerEmail ? child : null;
 }
 

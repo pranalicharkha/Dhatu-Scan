@@ -15,7 +15,7 @@ import { motion } from "motion/react";
 import { useTheme } from "next-themes";
 import { type ReactNode, useEffect, useState } from "react";
 import { useApp } from "../context/AppContext";
-import { db } from "../lib/db";
+import { getCurrentUser } from "../data/userRepository";
 import { cn } from "../lib/utils";
 import { getLevelProgress } from "../utils/assessmentLogic";
 import { calculateAgeInMonths, formatAgeFromMonths } from "../utils/childAge";
@@ -77,7 +77,7 @@ export default function Sidebar({
 
   useEffect(() => {
     let isMounted = true;
-    void db.currentUser.get(1).then((user) => {
+    void getCurrentUser().then((user) => {
       if (!isMounted) return;
       setParentName(getDisplayName(user?.full_name, user?.email));
     });

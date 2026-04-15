@@ -34,6 +34,7 @@ export async function getGamification(): Promise<LocalGamificationState | null> 
     (store) => store.get(GAMIFICATION_ID),
   );
 
+  // STRICT: Only return gamification for this parent
   if (!state || state.ownerEmail !== ownerEmail) return null;
   return state;
 }
