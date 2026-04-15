@@ -2,7 +2,7 @@ import { useApp } from "@/context/AppContext";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { motion } from "motion/react";
 import { useState } from "react";
-import { db } from "@/lib/db";
+import { saveCurrentUser } from "@/data/userRepository";
 
 const PALETTE = {
   page: "#f4ebdf",
@@ -51,8 +51,8 @@ export default function LoginPage() {
 
       const data = await response.json();
 
-      // Save to Dexie Local Store (ID 1)
-      await db.currentUser.put({
+      // Save to IndexedDB via consolidated repository
+      await saveCurrentUser({
         id: 1,
         email: email,
         auth_token: data.access_token,

@@ -12,7 +12,7 @@ import {
 import { motion } from "motion/react";
 import { type ReactNode, useEffect, useState } from "react";
 import { cn } from "../lib/utils";
-import { db } from "@/lib/db";
+import { getCurrentUser } from "@/data/userRepository";
 
 interface NavItem {
   href: string;
@@ -52,7 +52,7 @@ export default function BottomNav() {
 
   useEffect(() => {
     let isMounted = true;
-    void db.currentUser.get(1).then((user) => {
+    void getCurrentUser().then((user) => {
       if (!isMounted) return;
       setParentName(getDisplayName(user?.full_name, user?.email));
     });

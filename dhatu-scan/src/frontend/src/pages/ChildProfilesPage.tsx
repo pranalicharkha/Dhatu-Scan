@@ -1,7 +1,7 @@
 import GlassCard from "@/components/GlassCard";
 import { useApp } from "@/context/AppContext";
 import { API_BASE } from "@/lib/api";
-import { db } from "@/lib/db";
+import { getCurrentUserToken, getCurrentUserEmail } from "@/data/userRepository";
 import type { ChildProfile, Gender } from "@/types";
 import {
   calculateAgeInMonths,
@@ -36,13 +36,11 @@ const INITIAL_FORM: ChildFormState = {
 };
 
 async function getToken(): Promise<string | null> {
-  const user = await db.currentUser.get(1);
-  return user?.auth_token ?? null;
+  return getCurrentUserToken();
 }
 
-async function getCurrentUserEmail(): Promise<string> {
-  const user = await db.currentUser.get(1);
-  return user?.email ?? "";
+async function getUserEmail(): Promise<string> {
+  return (await getCurrentUserEmail()) ?? "";
 }
 
 export default function ChildProfilesPage() {
@@ -124,14 +122,7 @@ export default function ChildProfilesPage() {
     };
 
     addChild(localProfile);
-    const parentEmail = await getCurrentUserEmail();
-    await db.childProfiles.put({
-      childId: localProfile.id,
-      parentEmail,
-      childName: localProfile.name,
-      dob: localProfile.dateOfBirth ?? "",
-      gender: localProfile.gender,
-    });
+    const parentEmail = await getUserEmail();
 
     try {
       const token = await getToken();
@@ -162,14 +153,6 @@ export default function ChildProfilesPage() {
             updatedAt: new Date().toISOString(),
           };
 
-          await db.childProfiles.delete(localProfile.id);
-          await db.childProfiles.put({
-            childId: cloudChild.childId,
-            parentEmail,
-            childName: cloudChild.childName,
-            dob: cloudChild.dob,
-            gender: cloudChild.gender,
-          });
           replaceChildId(localProfile.id, syncedProfile);
           setActiveChild(syncedProfile.id);
           setApiMsg("Child saved to cloud and local device.");
@@ -209,11 +192,6 @@ export default function ChildProfilesPage() {
       gender: editForm.gender,
       updatedAt: now,
     });
-    await db.childProfiles.update(child.id, {
-      childName: editForm.name,
-      dob: editForm.dateOfBirth,
-      gender: editForm.gender,
-    });
 
     try {
       const token = await getToken();
@@ -247,7 +225,6 @@ export default function ChildProfilesPage() {
 
     setIsLoading(true);
     removeChild(child.id);
-    await db.childProfiles.delete(child.id);
 
     try {
       const token = await getToken();

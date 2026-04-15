@@ -20,14 +20,11 @@ import {
   getGamification,
   saveGamification,
 } from "../data/gamificationRepository";
-import { db } from "../lib/db";
+import { getCurrentUser } from "../data/userRepository";
+import { startAutoSync, stopAutoSync } from "../data/syncService";
 import type { Assessment, ChildProfile, GamificationState } from "../types";
 import { calculateXP, getLevel } from "../utils/assessmentLogic";
-import {
-  SAMPLE_CHILDREN,
-  SAMPLE_GAMIFICATION,
-  getAllSampleAssessments,
-} from "../utils/sampleData";
+// Sample data removed - using real user data only
 
 interface AppState {
   children: ChildProfile[];
@@ -100,7 +97,7 @@ function setAuthEmail(email: string | null): void {
 }
 
 async function syncAuthIdentityFromCurrentUser() {
-  const user = await db.currentUser.get(1);
+  const user = await getCurrentUser();
   setAuthEmail(user?.email ?? null);
   return user;
 }
@@ -200,14 +197,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     async function initialize() {
       try {
-        if (!isInitialized()) {
-          for (const child of SAMPLE_CHILDREN) await saveChild(child);
-          for (const assessment of getAllSampleAssessments()) {
-            await saveAssessmentRecord(assessment);
-          }
-          await saveGamification(SAMPLE_GAMIFICATION);
-          markInitialized();
-        }
+        // Clear old Dexie database if it exists
+        await deleteOldDexieDb();
+        
+        // Delete dummy/sample children
+        await deleteDummyChildren();
+        
+        // Initialize with empty state - no sample data
+        markInitialized();
 
         if (cancelled) return;
         const scopedState = await loadScopedState();
@@ -218,12 +215,92 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     }
 
+    async function deleteOldDexieDb() {
+      try {
+        // Delete the old Dexie database (DhatuScanDB) if it exists
+        await indexedDB.deleteDatabase("DhatuScanDB");
+        console.log("[Init] Old DhatuScanDB deleted successfully");
+      } catch (e) {
+        // Ignore errors - database might not exist
+      }
+    }
+
+    async function deleteDummyChildren() {
+      try {
+        // Import here to avoid circular dependency
+        const { withStore, STORES } = await import("../data/db");
+        
+        // Get all children
+        const allChildren = await withStore<{id: string; name: string}[]>(
+          STORES.children,
+          "readonly",
+          (store) => store.getAll(),
+        );
+        
+        // Delete dummy/sample children (Arjun, Priya, Rohan, etc.)
+        const dummyNames = ["arjun", "priya", "rohan", "aarav", "test", "sample"];
+        const dummyChildIds: string[] = [];
+        let deletedCount = 0;
+        
+        for (const child of allChildren) {
+          if (dummyNames.includes(child.name?.toLowerCase()?.trim())) {
+            dummyChildIds.push(child.id);
+            await withStore(STORES.children, "readwrite", (store) =>
+              store.delete(child.id),
+            );
+            deletedCount++;
+            console.log(`[Init] Deleted dummy child: ${child.name} (${child.id})`);
+          }
+        }
+        
+        // Also delete all assessments for dummy children
+        if (dummyChildIds.length > 0) {
+          // Get all assessments
+          const allAssessments = await withStore<{id: string; childId: string}[]>(
+            STORES.assessments,
+            "readonly",
+            (store) => store.getAll(),
+          );
+          
+          let deletedAssessments = 0;
+          for (const assessment of allAssessments) {
+            if (dummyChildIds.includes(assessment.childId)) {
+              await withStore(STORES.assessments, "readwrite", (store) =>
+                store.delete(assessment.id),
+              );
+              deletedAssessments++;
+            }
+          }
+          
+          if (deletedAssessments > 0) {
+            console.log(`[Init] Deleted ${deletedAssessments} assessments for dummy children`);
+          }
+        }
+        
+        if (deletedCount > 0) {
+          console.log(`[Init] Deleted ${deletedCount} dummy children`);
+        }
+      } catch (e) {
+        console.error("[Init] Failed to delete dummy children:", e);
+      }
+    }
+
     initialize();
+
+    // Start auto-sync when app initializes
+    startAutoSync();
 
     return () => {
       cancelled = true;
     };
   }, [loadScopedState]);
+
+  // Cleanup auto-sync on unmount
+  useEffect(() => {
+    return () => {
+      stopAutoSync();
+    };
+  }, []);
 
   const addChild = useCallback((child: ChildProfile) => {
     void saveChild(child);
