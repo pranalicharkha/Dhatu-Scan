@@ -4,6 +4,7 @@ import { getCameraAnalysisSession } from "@/lib/cameraAnalysisSession";
 import type { Assessment, WaterSourceType } from "@/types/index";
 import { isBackendConfigured, submitAssessmentToBackend } from "@/lib/backendApi";
 import {
+  applyWHORiskFloor,
   calculateBMI,
   calculateDietaryScore,
   calculateFinalScore,
@@ -200,6 +201,12 @@ export default function Form() {
       let stuntingStatus: Assessment["stuntingStatus"];
       let wastingStatus: Assessment["wastingStatus"];
       let usedBackend = false;
+      const whoResult = calculateWHOZScore(
+        height,
+        weight,
+        ageMonths,
+        activeChild.gender,
+      );
 
       if (isBackendConfigured()) {
         try {
@@ -221,7 +228,7 @@ export default function Form() {
             faceMasked: cameraSession.faceMasked,
             modelName: cameraSession.modelName,
             modelConfidence: cameraSession.modelConfidence / 100,
-            embeddingRiskHint: cameraSession.imageRiskScore / 100,
+            embeddingRiskHint: cameraSession.imageRiskScore,
             qualityScore: cameraSession.qualityScore,
             visibleSigns: cameraSession.visibleSigns,
           });
@@ -257,23 +264,19 @@ export default function Form() {
           dietaryScore,
           imageRiskScore,
         );
+        finalScore = applyWHORiskFloor(finalScore, whoResult);
         riskLevel = getRiskCategory(finalScore).level;
-        const whoResult = calculateWHOZScore(
-          height,
-          weight,
-          ageMonths,
-          activeChild.gender,
-        );
         whoZScore = whoResult.zScore;
         whoStatus = whoResult.status;
-        waz = whoResult.waz;
-        haz = whoResult.haz;
-        whz = whoResult.whz;
-        baz = whoResult.baz;
-        underweightStatus = whoResult.underweightStatus;
-        stuntingStatus = whoResult.stuntingStatus;
-        wastingStatus = whoResult.wastingStatus;
       }
+
+      waz = whoResult.waz;
+      haz = whoResult.haz;
+      whz = whoResult.whz;
+      baz = whoResult.baz;
+      underweightStatus = whoResult.underweightStatus;
+      stuntingStatus = whoResult.stuntingStatus;
+      wastingStatus = whoResult.wastingStatus;
 
       updateChild({
         ...activeChild,

@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { useApp } from "@/context/AppContext";
 import type { Assessment, RiskLevel, WHOStatus } from "@/types/index";
 import {
-  getRiskCategory,
+  getRiskCategoryByLevel,
   getRiskLevelColor,
   getWHOStatusColor,
 } from "@/utils/assessmentLogic";
@@ -40,6 +40,19 @@ const WATER_SOURCE_COPY: Record<number, string> = {
   3: "Surface water",
   0: "Unprotected water source",
 };
+
+function formatStatus(status: WHOStatus) {
+  return status.replace(/_/g, " ");
+}
+
+function getGrowthRangeLabel(value: number) {
+  if (value < -3) return "Below severe range";
+  if (value < -2) return "Moderate concern";
+  if (value < -1) return "Mild concern";
+  if (value <= 1) return "Expected range";
+  if (value <= 2) return "Above average";
+  return "Well above average";
+}
 
 function getImageRiskLabel(score: number) {
   if (score <= 30) return { label: "Low visual risk", color: "#8f85b3" };
@@ -169,7 +182,7 @@ const RECOMMENDATIONS: Record<RiskLevel, Recommendation[]> = {
   low: [
     {
       icon: "🥗",
-      title: "Maintain Balanced Diet",
+      title: "Maintain a balanced diet",
       description:
         "Continue providing diverse food groups — grains, proteins, fruits, vegetables, and dairy. Great progress so far!",
       priority: "low",
@@ -394,6 +407,65 @@ function WHOIndicatorCard({
       <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
         {WHO_STATUS_COPY[status]}
       </p>
+    </div>
+  );
+}
+
+function GrowthScale({
+  value,
+  status,
+  label = "WHO z-score",
+}: {
+  value: number;
+  status: WHOStatus;
+  label?: string;
+}) {
+  const color = getWHOStatusColor(status);
+  const clampedValue = Math.max(-3, Math.min(3, value));
+  const pct = ((clampedValue + 3) / 6) * 100;
+
+  return (
+    <div className="rounded-2xl border border-border/50 bg-background/30 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+            {label}
+          </div>
+          <div className="mt-1 text-sm font-medium text-foreground">
+            {getGrowthRangeLabel(value)}
+          </div>
+        </div>
+        <div className="text-right">
+          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+            Current
+          </div>
+          <div className="mt-1 text-lg font-semibold" style={{ color }}>
+            {value > 0 ? "+" : ""}
+            {value.toFixed(2)}
+          </div>
+        </div>
+      </div>
+      <div className="relative mt-4 h-3 overflow-hidden rounded-full bg-muted/40">
+        <div className="absolute inset-y-0 left-0 w-1/6 bg-red-600/75" />
+        <div className="absolute inset-y-0 left-[16.6667%] w-1/6 bg-orange-500/75" />
+        <div className="absolute inset-y-0 left-[33.3333%] w-1/6 bg-amber-400/75" />
+        <div className="absolute inset-y-0 left-1/2 w-1/6 bg-emerald-500/75" />
+        <div className="absolute inset-y-0 left-[66.6667%] w-1/6 bg-teal-500/75" />
+        <div className="absolute inset-y-0 left-[83.3333%] w-1/6 bg-cyan-500/75" />
+        <div
+          className="absolute top-1/2 z-10 h-5 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full border border-background shadow-lg"
+          style={{ left: `${pct}%`, background: color }}
+        />
+      </div>
+      <div className="mt-3 flex justify-between text-[10px] text-muted-foreground">
+        <span>-3</span>
+        <span>-2</span>
+        <span>-1</span>
+        <span>0</span>
+        <span>+1</span>
+        <span>+2</span>
+        <span>+3</span>
+      </div>
     </div>
   );
 }
@@ -714,11 +786,11 @@ export default function Results() {
     );
   }
 
-  const riskCategory = getRiskCategory(assessment.finalScore);
+  const riskCategory = getRiskCategoryByLevel(assessment.riskLevel);
   const riskColor = getRiskLevelColor(assessment.riskLevel);
   const whoColor = getWHOStatusColor(assessment.whoStatus);
   const riskCfg = RISK_CONFIG[assessment.riskLevel];
-  const recommendations = RECOMMENDATIONS[assessment.riskLevel];
+  const recommendations = RECOMMENDATIONS[assessment.riskLevel].slice(0, 3);
 
   // Snapshot non-null assessment for use inside closures
   const a = assessment;
@@ -744,6 +816,17 @@ export default function Results() {
   const imageRisk = a.imageRiskScore ?? 0;
   const imageQuality = a.imageQualityScore ?? 0;
   const imageRiskMeta = getImageRiskLabel(imageRisk);
+  const visibleSigns = (a.imageVisibleSigns ?? []).filter(
+    (sign) =>
+      ![
+        "Face capture quality validated",
+        "Face anonymization applied",
+        "Full-body framing processed",
+        "Incidental face anonymized",
+        "Uploaded image processed",
+        "Feature embedding extracted",
+      ].includes(sign),
+  );
 
   const handleDownload = () => {
     const report = {
@@ -1213,7 +1296,7 @@ export default function Results() {
                 Growth Assessment
               </h2>
               <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                WHO growth interpretation based on the child&apos;s measurements at this visit.
+                WHO growth interpretation based on the child's measurements at this visit.
               </p>
             </div>
             <Badge
@@ -1225,46 +1308,59 @@ export default function Results() {
                 background: `${whoColor}15`,
               }}
             >
-              {(assessment.stuntingStatus ?? assessment.whoStatus)
-                .replace(/_/g, " ")
-                .toUpperCase()}
+              {formatStatus(assessment.stuntingStatus ?? assessment.whoStatus).toUpperCase()}
             </Badge>
           </div>
-          <p className="mt-4 text-sm leading-relaxed text-foreground/85">
-            {WHO_STATUS_COPY[assessment.whoStatus]}
-          </p>
-          <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_220px]">
-            <div className="rounded-2xl border border-border/50 bg-background/30 p-4">
-              <ReportRow
-                label="Underweight (WAZ)"
-                value={`${(assessment.waz ?? assessment.whoZScore).toFixed(2)} · ${(assessment.underweightStatus ?? assessment.whoStatus).replace(/_/g, " ")}`}
+          <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <WHOIndicatorCard
+                label="WAZ"
+                title="Underweight"
+                subtitle={formatStatus(assessment.underweightStatus ?? assessment.whoStatus)}
+                value={assessment.waz ?? assessment.whoZScore}
+                status={assessment.underweightStatus ?? assessment.whoStatus}
               />
-              <ReportRow
-                label="Stunting (HAZ)"
-                value={`${(assessment.haz ?? assessment.whoZScore).toFixed(2)} · ${(assessment.stuntingStatus ?? assessment.whoStatus).replace(/_/g, " ")}`}
+              <WHOIndicatorCard
+                label="HAZ"
+                title="Stunting"
+                subtitle={formatStatus(assessment.stuntingStatus ?? assessment.whoStatus)}
+                value={assessment.haz ?? assessment.whoZScore}
+                status={assessment.stuntingStatus ?? assessment.whoStatus}
               />
-              <ReportRow
-                label="Wasting (WHZ)"
-                value={`${(assessment.whz ?? assessment.whoZScore).toFixed(2)} · ${(assessment.wastingStatus ?? assessment.whoStatus).replace(/_/g, " ")}`}
+              <WHOIndicatorCard
+                label="WHZ"
+                title="Wasting"
+                subtitle={formatStatus(assessment.wastingStatus ?? assessment.whoStatus)}
+                value={assessment.whz ?? assessment.whoZScore}
+                status={assessment.wastingStatus ?? assessment.whoStatus}
               />
-              <ReportRow
-                label="BMI For Age (BAZ)"
-                value={`${(
+              <WHOIndicatorCard
+                label="BAZ"
+                title="BMI for age"
+                subtitle="Body mass index"
+                value={
                   assessment.baz ??
                   Number(
                     (assessment.weight / (assessment.height / 100) ** 2).toFixed(2),
                   )
-                ).toFixed(2)}`}
+                }
+                status={assessment.wastingStatus ?? assessment.whoStatus}
               />
             </div>
-            <div className="rounded-2xl border border-border/50 bg-background/30 p-4">
-              <WHOPie
-                zScore={assessment.haz ?? assessment.whoZScore}
-                color={whoColor}
+            <div className="space-y-4">
+              <GrowthScale
+                label="WHO final z-score"
+                value={assessment.whoZScore}
+                status={assessment.whoStatus}
               />
-              <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
-                Scores below -2 suggest concern and scores below -3 indicate severe risk.
-              </p>
+              <div className="rounded-2xl border border-border/50 bg-background/30 p-4">
+                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  Summary
+                </div>
+                <p className="mt-2 text-sm leading-relaxed text-foreground/85">
+                  {WHO_STATUS_COPY[assessment.whoStatus]}
+                </p>
+              </div>
             </div>
           </div>
         </GlassCard>
@@ -1277,27 +1373,14 @@ export default function Results() {
                   Image Analysis
                 </h2>
                 <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                  Upload quality and landmark detection from the submitted image.
+                  Landmark detection and visible findings from the submitted image.
                 </p>
               </div>
-              <Badge
-                variant="outline"
-                className="text-[10px] px-2 py-0.5 border font-medium"
-                style={{
-                  color: imageRiskMeta.color,
-                  borderColor: `${imageRiskMeta.color}50`,
-                  background: `${imageRiskMeta.color}15`,
-                }}
-              >
-                {imageRiskMeta.label}
+              <Badge variant="outline" className="text-[10px] px-2 py-0.5 border font-medium">
+                Image review
               </Badge>
             </div>
             <div className="mt-5 rounded-2xl border border-border/50 bg-background/30 p-4">
-              <ReportRow label="Image Risk" value={`${imageRisk}/100`} />
-              <ReportRow
-                label="Image Quality"
-                value={`${imageQuality}/100 · ${getQualityLabel(imageQuality)}`}
-              />
               <ReportRow
                 label="Landmarks"
                 value={`${a.faceLandmarksDetected ?? 0}/468 face, ${a.bodyLandmarksDetected ?? 0}/33 body`}
@@ -1306,6 +1389,26 @@ export default function Results() {
                 label="Face Masking"
                 value={a.faceMasked ? "Applied" : "Not confirmed"}
               />
+              <ReportRow
+                label="Camera Confidence"
+                value={`${a.cameraConfidence ?? 0}%`}
+              />
+            </div>
+            <div className="mt-4 rounded-2xl border border-border/50 bg-background/30 p-4">
+              <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                Clinical Signs In Image Analysis
+              </div>
+              {visibleSigns.length > 0 ? (
+                <ul className="mt-3 space-y-2 text-sm text-foreground/90">
+                  {visibleSigns.map((sign) => (
+                    <li key={sign}>- {sign}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-3 text-sm text-muted-foreground">
+                  No visible clinical signs were detected by the model in this image.
+                </p>
+              )}
             </div>
           </GlassCard>
 
@@ -1322,8 +1425,6 @@ export default function Results() {
               <ReportRow label="Age At Assessment" value={`${a.age} months`} />
               <ReportRow label="Height" value={`${a.height} cm`} />
               <ReportRow label="Weight" value={`${a.weight} kg`} />
-              <ReportRow label="Dietary Risk" value={`${a.dietaryScore}/100`} />
-              <ReportRow label="Diet Diversity" value={`${a.dietDiversity}/10`} />
               <ReportRow
                 label="Water Source"
                 value={WATER_SOURCE_COPY[a.waterSource] ?? "Unknown"}
@@ -1337,7 +1438,7 @@ export default function Results() {
             Guidance
           </h2>
           <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-            Recommendations and practical next steps for follow-up care at home and with a health worker.
+            Clear next steps for home care and follow-up.
           </p>
           <div className="mt-5 space-y-5">
             <div data-ocid="recommendations-list">
@@ -1362,7 +1463,7 @@ export default function Results() {
                             : "Good practice"}
                       </span>
                     </div>
-                    <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                    <p className="mt-2 text-sm text-muted-foreground">
                       {rec.description}
                     </p>
                   </li>
@@ -1383,12 +1484,12 @@ export default function Results() {
                       {tip.title}
                     </div>
                     <ul className="mt-2 space-y-2">
-                      {tip.tips.map((item) => (
+                      {tip.tips.slice(0, 3).map((item) => (
                         <li
                           key={item}
-                          className="text-sm leading-relaxed text-muted-foreground"
+                          className="text-sm text-muted-foreground"
                         >
-                          {item}
+                          - {item}
                         </li>
                       ))}
                     </ul>
@@ -1398,7 +1499,6 @@ export default function Results() {
             </div>
           </div>
         </GlassCard>
-
         <GlassCard animate delay={0.2} variant="default" className="p-4">
           <div
             className="grid grid-cols-2 gap-3"
@@ -1411,7 +1511,7 @@ export default function Results() {
               onClick={handleDownload}
               data-ocid="download-report-btn"
             >
-              <span>⬇️</span> Download Report
+              <span>Download</span> Download Report
             </Button>
             <Button
               variant="outline"
@@ -1429,7 +1529,7 @@ export default function Results() {
               onClick={() => navigate({ to: "/history" })}
               data-ocid="view-history-btn"
             >
-              <span>📈</span> Growth History
+              <span>History</span> Growth History
             </Button>
             <Button
               size="sm"
@@ -1437,7 +1537,7 @@ export default function Results() {
               onClick={() => navigate({ to: "/form" })}
               data-ocid="new-assessment-btn"
             >
-              <span>🔄</span> New Assessment
+              <span>New</span> New Assessment
             </Button>
           </div>
         </GlassCard>

@@ -7,6 +7,7 @@ import type {
   WHOZScoreResult,
 } from "../types";
 import {
+  applyWHORiskFloor,
   calculateBMI,
   calculateDietaryScore,
   calculateFinalScore,
@@ -66,14 +67,17 @@ export function useAssessment(): UseAssessmentReturn {
         diarrheaScore,
       );
 
-      const finalScore = calculateFinalScore(wastingScore, dietaryScore);
-      const risk = getRiskCategory(finalScore);
       const whoResult = calculateWHOZScore(
         height,
         weight,
         age,
         gender as Gender,
       );
+      const finalScore = applyWHORiskFloor(
+        calculateFinalScore(wastingScore, dietaryScore),
+        whoResult,
+      );
+      const risk = getRiskCategory(finalScore);
 
       const assessment: Assessment = {
         id: generateId(),

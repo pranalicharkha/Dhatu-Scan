@@ -4,6 +4,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { motion } from "motion/react";
 import { useState } from "react";
 
+
 const PALETTE = {
   page: "#f4ebdf",
   panel: "#efe3d4",

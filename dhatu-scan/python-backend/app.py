@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+import math
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from threading import Lock
@@ -38,7 +38,15 @@ except Exception:  # pragma: no cover - tensorflow is optional at import time
 Gender = Literal["male", "female", "other"]
 WaterSourceType = Literal["piped", "borehole", "surface", "unprotected"]
 CaptureMode = Literal["live", "upload"]
-WHOStatus = Literal["normal", "underweight", "stunted", "wasted", "severe_wasting"]
+WHOStatus = Literal[
+    "normal",
+    "underweight",
+    "severe_underweight",
+    "stunted",
+    "severe_stunting",
+    "wasted",
+    "severe_wasting",
+]
 RiskLevel = Literal["low", "moderate", "high"]
 TipSeverity = Literal["info", "warning", "critical"]
 
@@ -170,29 +178,17 @@ class ExportResponse(BaseModel):
     downloadUrl: str
 
 
-@dataclass(frozen=True)
-class WHORef:
-    age: int
-    wfa_m: float
-    wfa_f: float
-    hfa_m: float
-    hfa_f: float
-    sd_w: float
-    sd_h: float
-
-
-WHO_REFS: list[WHORef] = [
-    WHORef(0, 3.3, 3.2, 49.9, 49.1, 0.39, 1.9),
-    WHORef(6, 7.9, 7.3, 67.6, 65.7, 0.78, 2.4),
-    WHORef(12, 9.6, 8.9, 75.7, 74.0, 0.94, 2.7),
-    WHORef(18, 10.9, 10.2, 82.3, 80.7, 1.06, 2.9),
-    WHORef(24, 12.2, 11.5, 87.8, 86.4, 1.18, 3.1),
-    WHORef(36, 14.3, 13.9, 96.1, 95.1, 1.40, 3.5),
-    WHORef(48, 16.3, 15.9, 103.3, 102.7, 1.6, 3.8),
-    WHORef(60, 18.3, 17.7, 110.0, 109.4, 1.8, 4.0),
-]
-
 TRAINING_DATASET_URL = "https://platform.who.int/nutrition/malnutrition-database/database-search"
+WHO_TABLES_PATH = (
+    Path(__file__).resolve().parent.parent
+    / "src"
+    / "frontend"
+    / "src"
+    / "data"
+    / "whoGrowthTables.json"
+)
+with WHO_TABLES_PATH.open("r", encoding="utf-8") as who_tables_file:
+    WHO_TABLES = json.load(who_tables_file)
 
 
 def _round2(value: float) -> float:
@@ -207,53 +203,147 @@ def _to_iso_now() -> str:
     return datetime.now(tz=timezone.utc).isoformat()
 
 
-def _who_ref(age_months: int, gender: Gender) -> tuple[float, float, float, float]:
-    refs = WHO_REFS
-    if age_months <= refs[0].age:
-        lower = refs[0]
-        upper = refs[0]
-    elif age_months >= refs[-1].age:
-        lower = refs[-1]
-        upper = refs[-1]
+def _normalize_gender(gender: Gender) -> str:
+    return "female" if gender == "female" else "male"
+
+
+def _interpolate_row(value: float, rows: list[dict[str, float]], key: str) -> dict[str, float]:
+    sorted_rows = sorted(rows, key=lambda row: float(row.get(key, 0.0)))
+    if value <= float(sorted_rows[0].get(key, 0.0)):
+        return sorted_rows[0]
+    if value >= float(sorted_rows[-1].get(key, 0.0)):
+        return sorted_rows[-1]
+
+    for idx in range(len(sorted_rows) - 1):
+        lower = sorted_rows[idx]
+        upper = sorted_rows[idx + 1]
+        lower_value = float(lower.get(key, 0.0))
+        upper_value = float(upper.get(key, 0.0))
+        if lower_value <= value <= upper_value:
+            if upper_value == lower_value:
+                return lower
+            t = (value - lower_value) / (upper_value - lower_value)
+            return {
+                key: value,
+                "l": float(lower["l"]) + t * (float(upper["l"]) - float(lower["l"])),
+                "m": float(lower["m"]) + t * (float(upper["m"]) - float(lower["m"])),
+                "s": float(lower["s"]) + t * (float(upper["s"]) - float(lower["s"])),
+            }
+    return sorted_rows[-1]
+
+
+def _zscore_from_lms(observed: float, row: dict[str, float]) -> float:
+    if observed <= 0:
+        return 0.0
+    l = float(row["l"])
+    m = float(row["m"])
+    s = float(row["s"])
+    if l == 0:
+        base_z = math.log(observed / m) / s
     else:
-        lower = refs[0]
-        upper = refs[-1]
-        for idx in range(len(refs) - 1):
-            a, b = refs[idx], refs[idx + 1]
-            if a.age <= age_months <= b.age:
-                lower, upper = a, b
-                break
+        base_z = ((observed / m) ** l - 1.0) / (l * s)
 
-    span = upper.age - lower.age
-    t = 0.0 if span == 0 else (age_months - lower.age) / span
+    if -3.0 <= base_z <= 3.0:
+        return base_z
 
-    low_w = lower.wfa_f if gender == "female" else lower.wfa_m
-    up_w = upper.wfa_f if gender == "female" else upper.wfa_m
-    low_h = lower.hfa_f if gender == "female" else lower.hfa_m
-    up_h = upper.hfa_f if gender == "female" else upper.hfa_m
-    wfa = low_w + t * (up_w - low_w)
-    hfa = low_h + t * (up_h - low_h)
-    sd_w = lower.sd_w + t * (upper.sd_w - lower.sd_w)
-    sd_h = lower.sd_h + t * (upper.sd_h - lower.sd_h)
-    return wfa, hfa, sd_w, sd_h
+    def measurement_at_z(z: float) -> float:
+        if l == 0:
+            return m * math.exp(s * z)
+        return m * ((1.0 + l * s * z) ** (1.0 / l))
+
+    if base_z < -3.0:
+        sd2neg = measurement_at_z(-2.0)
+        sd3neg = measurement_at_z(-3.0)
+        sd23neg = sd2neg - sd3neg
+        if sd23neg <= 0:
+            return -3.0
+        return -3.0 + ((observed - sd3neg) / sd23neg)
+
+    sd2pos = measurement_at_z(2.0)
+    sd3pos = measurement_at_z(3.0)
+    sd23pos = sd3pos - sd2pos
+    if sd23pos <= 0:
+        return 3.0
+    return 3.0 + ((observed - sd3pos) / sd23pos)
+
+
+def _classify_underweight(waz: float) -> WHOStatus:
+    if waz < -3.0:
+        return "severe_underweight"
+    if waz < -2.0:
+        return "underweight"
+    return "normal"
+
+
+def _classify_stunting(haz: float) -> WHOStatus:
+    if haz < -3.0:
+        return "severe_stunting"
+    if haz < -2.0:
+        return "stunted"
+    return "normal"
+
+
+def _classify_wasting(whz: float) -> WHOStatus:
+    if whz < -3.0:
+        return "severe_wasting"
+    if whz < -2.0:
+        return "wasted"
+    return "normal"
+
+
+def _primary_who_status(
+    underweight_status: WHOStatus,
+    stunting_status: WHOStatus,
+    wasting_status: WHOStatus,
+) -> WHOStatus:
+    severity_order: list[WHOStatus] = [
+        "severe_wasting",
+        "severe_stunting",
+        "severe_underweight",
+        "wasted",
+        "stunted",
+        "underweight",
+        "normal",
+    ]
+    return sorted(
+        [underweight_status, stunting_status, wasting_status],
+        key=severity_order.index,
+    )[0]
+
+
+def _primary_zscore(status: WHOStatus, waz: float, haz: float, whz: float) -> float:
+    if status in {"severe_wasting", "wasted"}:
+        return whz
+    if status in {"severe_stunting", "stunted"}:
+        return haz
+    if status in {"severe_underweight", "underweight"}:
+        return waz
+    return min(waz, haz, whz)
 
 
 def _who_zscore(a: AnthropometryInput) -> tuple[float, WHOStatus]:
-    wfa, hfa, sd_w, sd_h = _who_ref(a.ageMonths, a.gender)
-    waz = (a.weightKg - wfa) / (sd_w * 2.0)
-    haz = (a.heightCm - hfa) / (sd_h * 2.0)
-    whz = (a.weightKg - wfa * 0.85) / (sd_w * 1.5)
-    primary = min(waz, haz, whz)
+    sex = _normalize_gender(a.gender)
+    bmi = a.weightKg / ((a.heightCm / 100.0) ** 2) if a.heightCm > 0 else 0.0
 
-    if primary >= -1:
-        status: WHOStatus = "normal"
-    elif primary >= -2:
-        status = "underweight" if waz < -1 else "stunted"
-    elif primary >= -3:
-        status = "wasted" if whz < -2 else "stunted"
-    else:
-        status = "severe_wasting"
-    return _round2(primary), status
+    wfa_ref = _interpolate_row(float(a.ageMonths), WHO_TABLES["wfa"][sex], "ageMonths")
+    lhfa_table = WHO_TABLES["lhfa"][sex]["0_24"] if a.ageMonths < 24 else WHO_TABLES["lhfa"][sex]["24_60"]
+    bfa_table = WHO_TABLES["bfa"][sex]["0_24"] if a.ageMonths < 24 else WHO_TABLES["bfa"][sex]["24_60"]
+    size_table = WHO_TABLES["wfl"][sex] if a.ageMonths < 24 else WHO_TABLES["wfh"][sex]
+
+    haz_ref = _interpolate_row(float(a.ageMonths), lhfa_table, "ageMonths")
+    baz_ref = _interpolate_row(float(a.ageMonths), bfa_table, "ageMonths")
+    whz_ref = _interpolate_row(float(a.heightCm), size_table, "sizeCm")
+
+    waz = _zscore_from_lms(a.weightKg, wfa_ref)
+    haz = _zscore_from_lms(a.heightCm, haz_ref)
+    whz = _zscore_from_lms(a.weightKg, whz_ref)
+    _ = _zscore_from_lms(bmi, baz_ref)
+
+    underweight_status = _classify_underweight(waz)
+    stunting_status = _classify_stunting(haz)
+    wasting_status = _classify_wasting(whz)
+    status = _primary_who_status(underweight_status, stunting_status, wasting_status)
+    return _round2(_primary_zscore(status, waz, haz, whz)), status
 
 
 def _wasting_score(a: AnthropometryInput) -> float:
@@ -298,24 +388,62 @@ def _risk(score: float) -> RiskLevel:
     return "high"
 
 
-def _recommendations(risk: RiskLevel) -> list[str]:
-    if risk == "low":
+def _apply_who_risk_floor(score: float, who_z: float, who_status: WHOStatus) -> float:
+    if who_z <= -3.0 or who_status in {"severe_wasting", "severe_stunting", "severe_underweight"}:
+        return max(score, 61.0)
+    if who_z <= -2.0 or who_status in {"wasted", "stunted", "underweight"}:
+        return max(score, 31.0)
+    return score
+
+
+def _clinical_sign_review_items(image_assessment: ImageAssessment | None) -> list[str]:
+    if image_assessment is None:
         return [
+            "If visible/recognizable, manually review for faltering growth (not gaining weight/height), "
+            "extreme fatigue, irritability, swollen abdomen or limbs (edema), brittle hair, dry skin, "
+            "and frequent infections.",
+        ]
+
+    review_items = [
+        "If visible/recognizable, manually review for faltering growth (not gaining weight/height).",
+        "If visible/recognizable, manually review for extreme fatigue and irritability.",
+        "If visible/recognizable, manually review for swollen abdomen or limbs (edema).",
+        "If visible/recognizable, manually review for brittle hair and dry skin.",
+        "If visible/recognizable, manually review for frequent infections from clinical history.",
+    ]
+
+    if image_assessment.visibleWastingProbability >= 0.55:
+        review_items.append(
+            "Model flagged elevated visible wasting probability: prioritize clinical confirmation of growth faltering and fatigue."
+        )
+    if image_assessment.oedemaProbability >= 0.18:
+        review_items.append(
+            "Model flagged possible edema pattern: verify swelling in abdomen and limbs with physical exam."
+        )
+    return review_items
+
+
+def _recommendations(risk: RiskLevel, image_assessment: ImageAssessment | None = None) -> list[str]:
+    if risk == "low":
+        recs = [
             "Continue regular monthly growth monitoring.",
             "Maintain diverse meals and safe drinking water.",
             "Keep vaccination and deworming schedules updated.",
         ]
+        return recs + _clinical_sign_review_items(image_assessment)
     if risk == "moderate":
-        return [
+        recs = [
             "Increase meal diversity with protein-rich foods and micronutrients.",
             "Schedule nutrition follow-up within 2 weeks.",
             "Monitor hydration and prevent recurrent diarrhea.",
         ]
-    return [
+        return recs + _clinical_sign_review_items(image_assessment)
+    recs = [
         "Refer child for urgent pediatric nutrition evaluation.",
         "Begin close weekly follow-up until risk decreases.",
         "Use supervised feeding plan and medical screening for infections.",
     ]
+    return recs + _clinical_sign_review_items(image_assessment)
 
 
 def _summary(report: Report) -> str:
@@ -500,18 +628,19 @@ async def upload_image(
     if decoded is None:
         raise HTTPException(status_code=400, detail="Invalid image format")
 
-    masked, face_masked = apply_face_mask(decoded)
+    masked, face_masked = apply_face_mask(decoded, phase=phase)
     embedding = extract_embedding(masked)
     embedding_dim = int(embedding.shape[0]) if hasattr(embedding, "shape") else len(embedding)
     masked_path = save_masked_image(masked, childId, phase, _masked_dir)
     visible_signs: list[str] = []
-    if embedding_dim > 0:
-        visible_signs = ["Backend image processed", "Masked image retained"]
+
+    quality_score = 90 if phase == "face" and face_masked else 84 if face_masked else 70
     image_assessment = analyze_visible_signs(
         embedding_dim=embedding_dim,
-        quality_score=82 if face_masked else 68,
+        quality_score=quality_score,
         face_masked=face_masked,
         visible_signs=visible_signs,
+        masked_bgr=masked,
     )
 
     return ApiUploadImageResponse(
@@ -542,19 +671,20 @@ def evaluate_guidance(payload: ApiLandmarkVisibility) -> ApiGuidanceResponse:
     score = int(_clamp(weighted * 100.0, 0.0, 100.0))
     tips: list[ApiGuidanceTip] = []
     if body_cov < 0.85:
-        tips.append(ApiGuidanceTip(message="Adjust framing: at least 33 body landmarks must be visible.", severity="critical"))
+        tips.append(ApiGuidanceTip(message="Bring the full body into view.", severity="critical"))
     if face_cov < 0.85:
-        tips.append(ApiGuidanceTip(message="Adjust face angle/lighting so all 468 facial landmarks are detected.", severity="warning"))
+        tips.append(ApiGuidanceTip(message="Keep the face clearly visible.", severity="warning"))
     if not payload.fullBodyVisible:
-        tips.append(ApiGuidanceTip(message="Ensure full body is in frame before capture.", severity="critical"))
+        tips.append(ApiGuidanceTip(message="Make sure the whole body is inside the frame.", severity="critical"))
     if not payload.headVisible or not payload.feetVisible:
-        tips.append(ApiGuidanceTip(message="Head and feet should both be visible for accurate anthropometry.", severity="warning"))
+        tips.append(ApiGuidanceTip(message="Keep both head and feet visible.", severity="warning"))
     if not payload.centered:
-        tips.append(ApiGuidanceTip(message="Move child to center of frame.", severity="info"))
+        tips.append(ApiGuidanceTip(message="Center the child in the frame.", severity="info"))
     if not payload.distanceOk:
-        tips.append(ApiGuidanceTip(message="Step back to roughly 2 meters for full-body capture.", severity="info"))
+        tips.append(ApiGuidanceTip(message="Step back a little for full-body capture.", severity="info"))
     if not payload.adequateLighting:
-        tips.append(ApiGuidanceTip(message="Increase lighting to improve landmark and mask quality.", severity="warning"))
+        tips.append(ApiGuidanceTip(message="Use brighter lighting.", severity="warning"))
+    tips = tips[:3]
     if not tips:
         tips.append(ApiGuidanceTip(message="Capture conditions are good. Proceed with scan.", severity="info"))
 
@@ -690,6 +820,7 @@ def generate_assessment(payload: ApiAssessmentRequest, current_user: Parent = De
         image_assessment,
         payload.capture.embeddingRiskHint,
     )
+    fusion = _round2(_apply_who_risk_floor(fusion, who_z, who_status))
     risk = risk_from_score(fusion)
 
     # Save Assessment to DB
@@ -743,7 +874,7 @@ def generate_assessment(payload: ApiAssessmentRequest, current_user: Parent = De
             riskLevel=risk,
         ),
         summary=build_assessment_summary(who_status, risk, image_assessment),
-        recommendations=_recommendations(risk),
+        recommendations=_recommendations(risk, image_assessment),
         maskedImage=masked_image_ref,
         imageAssessment=image_assessment,
     )
@@ -780,4 +911,3 @@ def export_data(current_user: Parent = Depends(get_current_user)):
     # Mock generating a CSV/PDF link
     mock_url = f"https://api.dhatu-scan.com/exports/{current_user.email}_data.csv"
     return ExportResponse(downloadUrl=mock_url)
-

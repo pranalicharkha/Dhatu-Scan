@@ -8,7 +8,15 @@ from pydantic import BaseModel, Field
 Gender = Literal["male", "female", "other"]
 WaterSourceType = Literal["piped", "borehole", "surface", "unprotected"]
 CaptureMode = Literal["live", "upload"]
-WHOStatus = Literal["normal", "underweight", "stunted", "wasted", "severe_wasting"]
+WHOStatus = Literal[
+    "normal",
+    "underweight",
+    "severe_underweight",
+    "stunted",
+    "severe_stunting",
+    "wasted",
+    "severe_wasting",
+]
 RiskLevel = Literal["low", "moderate", "high"]
 TipSeverity = Literal["info", "warning", "critical"]
 UploadPhase = Literal["face", "body", "upload"]

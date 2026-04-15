@@ -82,10 +82,35 @@ function interpolateRow(
 
 function zScoreFromLms(observed: number, row: WHOIndexedRow): number {
   if (observed <= 0) return 0;
-  if (row.l === 0) {
-    return Math.log(observed / row.m) / row.s;
+  const baseZ =
+    row.l === 0
+      ? Math.log(observed / row.m) / row.s
+      : (Math.pow(observed / row.m, row.l) - 1) / (row.l * row.s);
+
+  if (baseZ >= -3 && baseZ <= 3) {
+    return baseZ;
   }
-  return (Math.pow(observed / row.m, row.l) - 1) / (row.l * row.s);
+
+  const measurementAtZ = (z: number) => {
+    if (row.l === 0) {
+      return row.m * Math.exp(row.s * z);
+    }
+    return row.m * Math.pow(1 + row.l * row.s * z, 1 / row.l);
+  };
+
+  if (baseZ < -3) {
+    const sd2neg = measurementAtZ(-2);
+    const sd3neg = measurementAtZ(-3);
+    const sd23neg = sd2neg - sd3neg;
+    if (sd23neg <= 0) return -3;
+    return -3 + (observed - sd3neg) / sd23neg;
+  }
+
+  const sd2pos = measurementAtZ(2);
+  const sd3pos = measurementAtZ(3);
+  const sd23pos = sd3pos - sd2pos;
+  if (sd23pos <= 0) return 3;
+  return 3 + (observed - sd3pos) / sd23pos;
 }
 
 function classifyUnderweight(waz: number): WHOStatus {
@@ -124,6 +149,13 @@ function getPrimaryWHOStatus(
   return [underweightStatus, stuntingStatus, wastingStatus].sort(
     (a, b) => severityOrder.indexOf(a) - severityOrder.indexOf(b),
   )[0];
+}
+
+function getPrimaryZScore(status: WHOStatus, waz: number, haz: number, whz: number): number {
+  if (status === "severe_wasting" || status === "wasted") return whz;
+  if (status === "severe_stunting" || status === "stunted") return haz;
+  if (status === "severe_underweight" || status === "underweight") return waz;
+  return Math.min(waz, haz, whz);
 }
 
 function getWHOStatusCopy(status: WHOStatus) {
@@ -255,35 +287,60 @@ export function calculateIntegratedRiskScore(
   );
 }
 
-export function getRiskCategory(score: number): RiskCategory {
-  if (score <= 30) {
-    return {
-      level: "low",
-      label: "Low Risk",
-      color: "text-green-health",
-      description: "Child shows healthy growth indicators",
-      recommendation:
-        "Continue regular monitoring. Maintain balanced diet and clean water access.",
-    };
-  }
-  if (score <= 60) {
-    return {
-      level: "moderate",
-      label: "Moderate Risk",
-      color: "text-yellow-500",
-      description: "Some risk factors detected requiring attention",
-      recommendation:
-        "Improve dietary diversity, consult a healthcare worker within 2 weeks.",
-    };
-  }
-  return {
+const RISK_CATEGORY_BY_LEVEL: Record<RiskLevel, RiskCategory> = {
+  low: {
+    level: "low",
+    label: "Low Risk",
+    color: "text-green-health",
+    description: "Child shows healthy growth indicators",
+    recommendation:
+      "Continue regular monitoring. Maintain balanced diet and clean water access.",
+  },
+  moderate: {
+    level: "moderate",
+    label: "Moderate Risk",
+    color: "text-yellow-500",
+    description: "Some risk factors detected requiring attention",
+    recommendation:
+      "Improve dietary diversity, consult a healthcare worker within 2 weeks.",
+  },
+  high: {
     level: "high",
     label: "High Risk",
     color: "text-red-500",
     description: "Significant malnutrition indicators detected",
     recommendation:
       "Immediate consultation with a pediatrician or nutrition specialist required.",
-  };
+  },
+};
+
+export function getRiskCategory(score: number): RiskCategory {
+  if (score <= 30) {
+    return RISK_CATEGORY_BY_LEVEL.low;
+  }
+  if (score <= 60) {
+    return RISK_CATEGORY_BY_LEVEL.moderate;
+  }
+  return RISK_CATEGORY_BY_LEVEL.high;
+}
+
+export function getRiskCategoryByLevel(level: RiskLevel): RiskCategory {
+  return RISK_CATEGORY_BY_LEVEL[level];
+}
+
+export function applyWHORiskFloor(score: number, whoResult: WHOZScoreResult): number {
+  if (whoResult.zScore <= -3 || whoResult.status === "severe_wasting") {
+    return Math.max(score, 61);
+  }
+  if (
+    whoResult.zScore <= -2 ||
+    ["wasted", "stunted", "underweight", "severe_stunting", "severe_underweight"].includes(
+      whoResult.status,
+    )
+  ) {
+    return Math.max(score, 31);
+  }
+  return score;
 }
 
 export function calculateWHOZScore(
@@ -319,8 +376,8 @@ export function calculateWHOZScore(
     stuntingStatus,
     wastingStatus,
   );
-  const primaryZ = Math.min(waz, haz, whz);
   const copy = getWHOStatusCopy(status);
+  const primaryZ = getPrimaryZScore(status, waz, haz, whz);
 
   return {
     zScore: Number(primaryZ.toFixed(2)),

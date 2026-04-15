@@ -134,6 +134,25 @@ function buildFaceBounds(
   };
 }
 
+function expandFaceBounds(
+  faceBounds: { minX: number; maxX: number; minY: number; maxY: number } | null,
+  width: number,
+  height: number,
+) {
+  if (!faceBounds) return null;
+  const faceWidth = faceBounds.maxX - faceBounds.minX;
+  const faceHeight = faceBounds.maxY - faceBounds.minY;
+  const padX = Math.max(10, faceWidth * 0.35);
+  const padTop = Math.max(10, faceHeight * 0.45);
+  const padBottom = Math.max(10, faceHeight * 0.3);
+  return {
+    minX: clamp(faceBounds.minX - padX, 0, width),
+    maxX: clamp(faceBounds.maxX + padX, 0, width),
+    minY: clamp(faceBounds.minY - padTop, 0, height),
+    maxY: clamp(faceBounds.maxY + padBottom, 0, height),
+  };
+}
+
 function estimateVisibleSigns(
   poseLandmarks: PosePoint[],
   faceLandmarks: FacePoint[],
@@ -160,6 +179,12 @@ function estimateVisibleSigns(
       visibleSigns.push("Reduced torso and hip fullness");
       bodyRisk += 24;
     }
+
+    const shoulderHipRatio = shoulderWidth / Math.max(hipWidth, 0.01);
+    if (shoulderHipRatio < 0.85) {
+      visibleSigns.push("Upper body appears proportionally narrow");
+      bodyRisk += 12;
+    }
   }
 
   if (faceLandmarks.length >= 300) {
@@ -175,6 +200,27 @@ function estimateVisibleSigns(
         visibleSigns.push("Gaunt facial pattern");
         bodyRisk += 18;
       }
+    }
+  }
+
+  const leftUpperArm = poseLandmarks[11] && poseLandmarks[13]
+    ? distance(poseLandmarks[11], poseLandmarks[13])
+    : null;
+  const rightUpperArm = poseLandmarks[12] && poseLandmarks[14]
+    ? distance(poseLandmarks[12], poseLandmarks[14])
+    : null;
+  const leftForearm = poseLandmarks[13] && poseLandmarks[15]
+    ? distance(poseLandmarks[13], poseLandmarks[15])
+    : null;
+  const rightForearm = poseLandmarks[14] && poseLandmarks[16]
+    ? distance(poseLandmarks[14], poseLandmarks[16])
+    : null;
+  if (leftUpperArm && rightUpperArm && leftForearm && rightForearm) {
+    const forearmToUpper =
+      (leftForearm + rightForearm) / Math.max(leftUpperArm + rightUpperArm, 0.01);
+    if (forearmToUpper > 1.35) {
+      visibleSigns.push("Possible muscle loss pattern in upper limbs");
+      bodyRisk += 10;
     }
   }
 
@@ -258,34 +304,75 @@ function applyFaceMask(
     return false;
   }
 
-  const width = faceBounds.maxX - faceBounds.minX;
-  const height = faceBounds.maxY - faceBounds.minY;
+  const expanded = expandFaceBounds(faceBounds, canvas.width, canvas.height);
+  if (!expanded) return false;
+  const width = expanded.maxX - expanded.minX;
+  const height = expanded.maxY - expanded.minY;
+
   maskCtx.drawImage(canvas, 0, 0);
-  maskCtx.filter = "blur(20px)";
-  maskCtx.drawImage(
-    canvas,
-    faceBounds.minX,
-    faceBounds.minY,
-    width,
-    height,
-    faceBounds.minX,
-    faceBounds.minY,
-    width,
-    height,
-  );
-  maskCtx.filter = "none";
-  maskCtx.fillStyle = "rgba(20, 20, 20, 0.08)";
+  maskCtx.save();
   maskCtx.beginPath();
   maskCtx.ellipse(
-    faceBounds.minX + width / 2,
-    faceBounds.minY + height / 2,
+    expanded.minX + width / 2,
+    expanded.minY + height / 2,
     width / 2,
     height / 2,
     0,
     0,
     Math.PI * 2,
   );
-  maskCtx.fill();
+  maskCtx.clip();
+
+  const downscale = document.createElement("canvas");
+  downscale.width = Math.max(8, Math.floor(width / 16));
+  downscale.height = Math.max(8, Math.floor(height / 16));
+  const downCtx = downscale.getContext("2d");
+  if (!downCtx) {
+    maskCtx.restore();
+    return false;
+  }
+  downCtx.imageSmoothingEnabled = true;
+  downCtx.drawImage(
+    canvas,
+    expanded.minX,
+    expanded.minY,
+    width,
+    height,
+    0,
+    0,
+    downscale.width,
+    downscale.height,
+  );
+
+  maskCtx.imageSmoothingEnabled = false;
+  maskCtx.drawImage(
+    downscale,
+    0,
+    0,
+    downscale.width,
+    downscale.height,
+    expanded.minX,
+    expanded.minY,
+    width,
+    height,
+  );
+  maskCtx.imageSmoothingEnabled = true;
+  maskCtx.filter = "blur(30px) saturate(0.7) contrast(0.9)";
+  maskCtx.drawImage(
+    canvas,
+    expanded.minX,
+    expanded.minY,
+    width,
+    height,
+    expanded.minX,
+    expanded.minY,
+    width,
+    height,
+  );
+  maskCtx.filter = "none";
+  maskCtx.fillStyle = "rgba(16, 16, 16, 0.32)";
+  maskCtx.fillRect(expanded.minX, expanded.minY, width, height);
+  maskCtx.restore();
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(maskCanvas, 0, 0);
@@ -318,8 +405,16 @@ export async function preprocessAndAnalyzeImage(
   ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
 
   const { qualityBrightness, qualityContrast } = applyCanvasPreprocessing(canvas);
+  const landmarkCoverage = clamp(
+    input.poseLandmarks.filter((point) => (point.visibility ?? 1) > 0.4).length / 33,
+    0,
+    1,
+  );
   const qualityScore = clamp(
-    Math.round((qualityBrightness * 0.45 + qualityContrast * 0.55) * 100),
+    Math.round(
+      (qualityBrightness * 0.35 + qualityContrast * 0.45 + landmarkCoverage * 0.2) *
+        100,
+    ),
     0,
     100,
   );
@@ -379,9 +474,9 @@ export async function preprocessAndAnalyzeImage(
 
   const imageRiskScore = clamp(
     Math.round(
-      bodyRisk * 0.65 +
-        (100 - qualityScore) * 0.15 +
-        (100 - modelConfidence) * 0.2,
+      bodyRisk * 0.6 +
+        (100 - qualityScore) * 0.25 +
+        (100 - modelConfidence) * 0.15,
     ),
     0,
     100,

@@ -76,6 +76,11 @@ type CaptureState = "idle" | "scanning" | "complete";
 type CapturePhase = "face" | "body" | "complete";
 type InputMode = "capture" | "upload";
 
+const FACE_LANDMARK_TARGET = 468;
+const FACE_LANDMARK_MIN_READY = 420;
+const BODY_LANDMARK_TARGET = 33;
+const BODY_LANDMARK_MIN_READY = 27;
+
 declare global {
   interface Window {
     FaceMesh?: new (config: {
@@ -394,7 +399,7 @@ export default function Camera() {
         const bodyDetected = poseLandmarks.filter(
           (p) => (p.visibility ?? 1) > 0.4,
         ).length;
-        const faceDetected = Math.min(faceLandmarks.length, 468);
+        const faceDetected = Math.min(faceLandmarks.length, FACE_LANDMARK_TARGET);
 
         const xs = poseLandmarks.map((p) => p.x);
         const ys = poseLandmarks.map((p) => p.y);
@@ -403,11 +408,23 @@ export default function Camera() {
         const minY = ys.length > 0 ? Math.min(...ys) : 0;
         const maxY = ys.length > 0 ? Math.max(...ys) : 1;
         const bodyHeight = maxY - minY;
+        const minX = xs.length > 0 ? Math.min(...xs) : 0;
+        const maxX = xs.length > 0 ? Math.max(...xs) : 1;
+        const bodyWidth = maxX - minX;
+        const bodyBoxArea = Math.max(0, bodyWidth * bodyHeight);
+
+        const faceXs = faceLandmarks.map((p) => p.x);
+        const faceYs = faceLandmarks.map((p) => p.y);
+        const faceMinX = faceXs.length > 0 ? Math.min(...faceXs) : 0;
+        const faceMaxX = faceXs.length > 0 ? Math.max(...faceXs) : 1;
+        const faceMinY = faceYs.length > 0 ? Math.min(...faceYs) : 0;
+        const faceMaxY = faceYs.length > 0 ? Math.max(...faceYs) : 1;
+        const faceBoxArea = Math.max(0, (faceMaxX - faceMinX) * (faceMaxY - faceMinY));
 
         const adequateLighting = estimateBrightness(video) > 0.28;
         const centered = Math.abs(centerX - 0.5) < 0.18;
         const distanceOk = bodyHeight > 0.55 && bodyHeight < 0.92;
-        const fullBodyVisible = bodyDetected >= 27 && bodyHeight > 0.55;
+        const fullBodyVisible = bodyDetected >= BODY_LANDMARK_MIN_READY && bodyHeight > 0.52;
         const headVisible = bodyDetected > 0 && (poseLandmarks[0]?.visibility ?? 1) > 0.4;
         const feetVisible =
           (poseLandmarks[31]?.visibility ?? 0) > 0.3 ||
@@ -416,25 +433,31 @@ export default function Camera() {
         setBodyDetectedCount(bodyDetected);
         setFaceDetectedCount(faceDetected);
 
-        const faceReady = faceDetected >= 468 && adequateLighting && centered;
+        const faceReady = faceDetected >= FACE_LANDMARK_MIN_READY && adequateLighting && centered;
+        const bodyFramingOk = faceBoxArea <= 0.22 && bodyBoxArea >= 0.14 && bodyHeight >= 0.52;
         const bodyReady =
-          bodyDetected >= 33 &&
+          bodyDetected >= BODY_LANDMARK_MIN_READY &&
           fullBodyVisible &&
           headVisible &&
           feetVisible &&
           centered &&
           distanceOk &&
+          bodyFramingOk &&
           adequateLighting;
 
         if (capturePhase === "face") {
-          setConfidence(Math.min(100, Math.round((faceDetected / 468) * 100)));
+          setConfidence(
+            Math.min(100, Math.round((faceDetected / FACE_LANDMARK_TARGET) * 100)),
+          );
           setCanCapture(faceReady);
           if (!adequateLighting) {
             setLiveTip("Increase lighting for face close-up capture.");
           } else if (!centered) {
             setLiveTip("Center the face for close-up capture.");
-          } else if (faceDetected < 468) {
-            setLiveTip(`Face landmarks: ${faceDetected}/468. Hold still.`);
+          } else if (faceDetected < FACE_LANDMARK_MIN_READY) {
+            setLiveTip(
+              `Face landmarks: ${faceDetected}/${FACE_LANDMARK_TARGET}. Hold still.`,
+            );
           } else {
             setLiveTip("Face ready. Capture close-up now.");
           }
@@ -442,10 +465,20 @@ export default function Camera() {
         }
 
         if (capturePhase === "body") {
+          if (!bodyFramingOk) {
+            setCanCapture(false);
+            setConfidence(Math.max(35, Math.round(bodyBoxArea * 100)));
+            setLiveTip(
+              faceBoxArea > 0.16
+                ? "Face appears too close. Step back so full body is in frame."
+                : "Move farther back and keep full body visible before body capture.",
+            );
+            return;
+          }
           const guidance = await evaluateCaptureGuidance({
             bodyDetected,
             faceDetected,
-            bodyRequired: 33,
+            bodyRequired: BODY_LANDMARK_TARGET,
             faceRequired: 0,
             fullBodyVisible,
             adequateLighting,
@@ -455,9 +488,15 @@ export default function Camera() {
             feetVisible,
           });
           setConfidence(guidance.readinessScore);
-          setCanCapture(bodyReady && guidance.canCapture);
+          const fallbackBodyReady =
+            bodyDetected >= BODY_LANDMARK_MIN_READY &&
+            fullBodyVisible &&
+            centered &&
+            adequateLighting &&
+            bodyFramingOk;
+          setCanCapture((bodyReady && guidance.canCapture) || fallbackBodyReady);
           setLiveTip(
-            bodyReady && guidance.canCapture
+            (bodyReady && guidance.canCapture) || fallbackBodyReady
               ? "Body ready. Capture full-body image now."
               : (guidance.tips[0]?.message ??
                   "Adjust posture and framing for full-body capture."),
@@ -536,14 +575,13 @@ export default function Camera() {
             image,
             bodyCaptureFaceLandmarksRef.current,
             bodyCapturePoseLandmarksRef.current,
-            Math.min(bodyCaptureFaceLandmarksRef.current.length, 468),
+            Math.min(bodyCaptureFaceLandmarksRef.current.length, FACE_LANDMARK_TARGET),
             bodyCapturePoseLandmarksRef.current.filter(
               (point) => (point.visibility ?? 1) > 0.4,
             ).length,
             "live",
           )
             .then((session) => {
-              setFaceCaptureDataUrl(null);
               setBodyCaptureDataUrl(session.processedImageDataUrl);
               setCapturePhase("complete");
               setCaptureState("complete");
@@ -566,21 +604,6 @@ export default function Camera() {
     };
     requestAnimationFrame(tick);
   }, [captureState, canCapture, captureFrame, capturePhase, processCapturedImage]);
-
-  useEffect(() => {
-    if (
-      inputMode !== "capture" ||
-      !canCapture ||
-      captureState !== "idle" ||
-      capturePhase === "complete"
-    ) {
-      return;
-    }
-    const timer = setTimeout(() => {
-      handleCapture();
-    }, 1100);
-    return () => clearTimeout(timer);
-  }, [canCapture, capturePhase, captureState, handleCapture, inputMode]);
 
   const getUploadDetectors = useCallback(async () => {
     await loadScript(
@@ -790,12 +813,19 @@ export default function Camera() {
   );
 
   const goToForm = useCallback(() => {
+    if (
+      inputMode === "capture" &&
+      (capturePhase !== "complete" || !faceCaptureDataUrl || !bodyCaptureDataUrl)
+    ) {
+      setLiveTip("Complete both face and body captures before continuing.");
+      return;
+    }
     if (!sessionReady) {
       setLiveTip("You can continue only after all required landmarks are detected.");
       return;
     }
     navigate({ to: "/form" });
-  }, [navigate, sessionReady]);
+  }, [bodyCaptureDataUrl, capturePhase, faceCaptureDataUrl, inputMode, navigate, sessionReady]);
 
   const currentTip = TIPS[tipIndex];
   const TipIcon = currentTip.icon;
@@ -1084,9 +1114,9 @@ export default function Camera() {
             {!canCapture && (
               <p className="mt-1 text-[10px] font-medium text-red-300">
                 {capturePhase === "face"
-                  ? "Capture locked: face close-up must reach 468/468 landmarks."
+                  ? `Capture locked: face close-up should reach at least ${FACE_LANDMARK_MIN_READY}/${FACE_LANDMARK_TARGET} landmarks.`
                   : capturePhase === "body"
-                    ? "Capture locked: full body must satisfy all 33 body landmarks."
+                    ? `Capture locked: full body should reach at least ${BODY_LANDMARK_MIN_READY}/${BODY_LANDMARK_TARGET} landmarks.`
                     : "Capture locked: both phases already completed."}
               </p>
             )}
@@ -1206,14 +1236,27 @@ export default function Camera() {
                   whileHover={{ scale: 1.04 }}
                   whileTap={{ scale: 0.97 }}
                   onClick={goToForm}
-                  disabled={!sessionReady}
+                  disabled={
+                    !sessionReady ||
+                    capturePhase !== "complete" ||
+                    !faceCaptureDataUrl ||
+                    !bodyCaptureDataUrl
+                  }
                   className={`px-6 py-2.5 rounded-full font-semibold text-sm shadow-lg ${
-                    sessionReady
+                    sessionReady &&
+                    capturePhase === "complete" &&
+                    !!faceCaptureDataUrl &&
+                    !!bodyCaptureDataUrl
                       ? "gradient-teal text-primary-foreground"
                       : "bg-white/10 text-muted-foreground cursor-not-allowed"
                   }`}
                 >
-                  {sessionReady ? "Continue to Details →" : "Finalizing Analysis..."}
+                  {sessionReady &&
+                  capturePhase === "complete" &&
+                  faceCaptureDataUrl &&
+                  bodyCaptureDataUrl
+                    ? "Continue to Details →"
+                    : "Finalizing Analysis..."}
                 </motion.button>
               </motion.div>
             )}

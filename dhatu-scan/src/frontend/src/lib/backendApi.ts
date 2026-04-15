@@ -1,7 +1,15 @@
 import type { Gender, WaterSourceType } from "@/types";
+import { API_BASE } from "@/lib/api";
 
 type RiskLevel = "low" | "moderate" | "high";
-type WHOStatus = "normal" | "underweight" | "stunted" | "wasted" | "severe_wasting";
+type WHOStatus =
+  | "normal"
+  | "underweight"
+  | "severe_underweight"
+  | "stunted"
+  | "severe_stunting"
+  | "wasted"
+  | "severe_wasting";
 
 export interface BackendAssessmentInput {
   childId: string;
@@ -71,19 +79,8 @@ export interface UploadedImageResult {
   embeddingDim: number;
 }
 
-function getBaseUrl(): string {
-  const envUrl =
-    import.meta.env.VITE_PY_BACKEND_URL ??
-    import.meta.env.PY_BACKEND_URL ??
-    "";
-  if (typeof envUrl === "string" && envUrl.trim().length > 0) {
-    return envUrl.replace(/\/$/, "");
-  }
-  return "http://127.0.0.1:8000";
-}
-
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${getBaseUrl()}${path}`, {
+  const response = await fetch(`${API_BASE}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
@@ -202,7 +199,7 @@ export async function uploadImageToBackend(params: {
   formData.append("phase", params.phase);
   formData.append("image", params.file);
 
-  const response = await fetch(`${getBaseUrl()}/upload-image`, {
+  const response = await fetch(`${API_BASE}/upload-image`, {
     method: "POST",
     body: formData,
   });

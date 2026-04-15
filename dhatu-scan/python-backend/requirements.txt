@@ -6,3 +6,7 @@ pymysql
 passlib[bcrypt]
 python-jose[cryptography]
 python-multipart
+pandas
+scikit-learn
+openpyxl
+tensorflow
