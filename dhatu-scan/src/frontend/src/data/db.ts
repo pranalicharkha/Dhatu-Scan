@@ -52,6 +52,19 @@ export interface SyncQueueItem {
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
+async function getRequestedDbVersion(): Promise<number> {
+  const listDatabases = indexedDB.databases?.bind(indexedDB);
+  if (!listDatabases) return DB_VERSION;
+
+  try {
+    const databases = await listDatabases();
+    const existingDb = databases.find((db) => db.name === DB_NAME);
+    return Math.max(DB_VERSION, existingDb?.version ?? 0);
+  } catch {
+    return DB_VERSION;
+  }
+}
+
 function createIndexes(
   store: IDBObjectStore,
   indexes: Array<{ name: string; keyPath: string }>,
@@ -118,23 +131,32 @@ function upgradeDb(db: IDBDatabase) {
   }
 
   ensureStore(db, STORES.scans, { keyPath: "id" });
+
 }
 
 export function getDb(): Promise<IDBDatabase> {
   if (dbPromise) return dbPromise;
 
-  dbPromise = new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
+  dbPromise = getRequestedDbVersion().then(
+    (version) =>
+      new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, version);
 
-    request.onupgradeneeded = () => {
-      upgradeDb(request.result);
-    };
+        request.onupgradeneeded = () => {
+          upgradeDb(request.result);
+        };
 
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-    request.onblocked = () => {
-      console.warn("IndexedDB upgrade blocked. Close other Dhatu-Scan tabs.");
-    };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+        request.onblocked = () => {
+          console.warn("IndexedDB upgrade blocked. Close other Dhatu-Scan tabs.");
+        };
+      }),
+  );
+
+  dbPromise = dbPromise.catch((error) => {
+    dbPromise = null;
+    throw error;
   });
 
   return dbPromise;

@@ -1,5 +1,6 @@
 import GlassCard from "@/components/GlassCard";
 import { useApp } from "@/context/AppContext";
+import { API_BASE } from "@/lib/api";
 import { db } from "@/lib/db";
 import type { ChildProfile, Gender } from "@/types";
 import {
@@ -9,8 +10,6 @@ import {
 import { Link } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "motion/react";
 import { useMemo, useState } from "react";
-
-const API_BASE = "http://127.0.0.1:8000";
 
 const PALETTE = {
   page: "#F2EAE0",
@@ -41,13 +40,21 @@ async function getToken(): Promise<string | null> {
   return user?.auth_token ?? null;
 }
 
+async function getCurrentUserEmail(): Promise<string> {
+  const user = await db.currentUser.get(1);
+  return user?.email ?? "";
+}
+
 export default function ChildProfilesPage() {
-<<<<<<< HEAD
-  const { state, activeChild, addChild, updateChild, removeChild, setActiveChild } =
-    useApp();
-=======
-  const { state, activeChild, addChild, updateChild, replaceChildId, removeChild, setActiveChild } = useApp();
->>>>>>> f0e9383e0ea4f8d1f97a6d60c8a5870feaf5c07b
+  const {
+    state,
+    activeChild,
+    addChild,
+    updateChild,
+    replaceChildId,
+    removeChild,
+    setActiveChild,
+  } = useApp();
   const [form, setForm] = useState<ChildFormState>(INITIAL_FORM);
   const [errors, setErrors] = useState<
     Partial<Record<keyof ChildFormState, string>>
@@ -117,9 +124,10 @@ export default function ChildProfilesPage() {
     };
 
     addChild(localProfile);
+    const parentEmail = await getCurrentUserEmail();
     await db.childProfiles.put({
       childId: localProfile.id,
-      parentEmail: "",
+      parentEmail,
       childName: localProfile.name,
       dob: localProfile.dateOfBirth ?? "",
       gender: localProfile.gender,
@@ -144,7 +152,6 @@ export default function ChildProfilesPage() {
 
         if (resp.ok) {
           const cloudChild = await resp.json();
-<<<<<<< HEAD
           const syncedProfile: ChildProfile = {
             ...localProfile,
             id: cloudChild.childId,
@@ -158,21 +165,16 @@ export default function ChildProfilesPage() {
           await db.childProfiles.delete(localProfile.id);
           await db.childProfiles.put({
             childId: cloudChild.childId,
-            parentEmail: "",
+            parentEmail,
             childName: cloudChild.childName,
             dob: cloudChild.dob,
             gender: cloudChild.gender,
           });
-          updateChild(syncedProfile);
+          replaceChildId(localProfile.id, syncedProfile);
           setActiveChild(syncedProfile.id);
           setApiMsg("Child saved to cloud and local device.");
         } else {
           setApiMsg("Saved locally only. Cloud sync will retry later.");
-=======
-          setApiMsg("✅ Child saved to cloud & local device.");
-          // Replace temporary local ID with server child ID
-          replaceChildId(localProfile.id, { ...localProfile, id: cloudChild.childId });
->>>>>>> f0e9383e0ea4f8d1f97a6d60c8a5870feaf5c07b
         }
       } else {
         setApiMsg("Saved locally only. Login to sync to cloud.");

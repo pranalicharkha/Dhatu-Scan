@@ -1,4 +1,5 @@
 import { useApp } from "@/context/AppContext";
+import { API_BASE } from "@/lib/api";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { motion } from "motion/react";
 import { useState } from "react";
@@ -31,15 +32,15 @@ export default function RegisterPage() {
       // First check if backend is reachable
       let backendOk = false;
       try {
-        const health = await fetch("http://127.0.0.1:8000/health", { signal: AbortSignal.timeout(3000) });
+        const health = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(3000) });
         backendOk = health.ok;
       } catch {
-        throw new Error("Cannot reach the backend server. Please run: python -m uvicorn app:app --host 127.0.0.1 --port 8000 in the python-backend folder.");
+        throw new Error("Cannot reach the backend server. Please start the Python backend from the project root using npm run dev:backend:windows.");
       }
 
       if (!backendOk) throw new Error("Backend server returned an error. Please restart it.");
 
-      const response = await fetch("http://127.0.0.1:8000/auth/register", {
+      const response = await fetch(`${API_BASE}/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fullName, email, password }),

@@ -14,7 +14,7 @@ process.env.STORAGE_GATEWAY_URL =
 
 export default defineConfig({
   base:"./",
-  logLevel: "error",
+  logLevel: "info",
   build: {
     emptyOutDir: true,
     sourcemap: false,
@@ -31,6 +31,8 @@ export default defineConfig({
     },
   },
   server: {
+    host: "0.0.0.0",
+    port: 5173,
     proxy: {
       "/api": {
         target: "http://127.0.0.1:4943",

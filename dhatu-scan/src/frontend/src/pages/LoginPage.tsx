@@ -16,6 +16,14 @@ const PALETTE = {
   buttonDark: "#52456d",
 };
 
+function getDisplayName(fullName: string | undefined, email: string): string {
+  const normalizedFullName = fullName?.trim();
+  if (normalizedFullName) return normalizedFullName;
+
+  const emailPrefix = email.trim().split("@")[0]?.trim();
+  return emailPrefix && emailPrefix.length > 0 ? emailPrefix : "Parent";
+}
+
 export default function LoginPage() {
   const navigate = useNavigate();
   const { signIn } = useApp();
@@ -48,8 +56,9 @@ export default function LoginPage() {
         id: 1,
         email: email,
         auth_token: data.access_token,
-        full_name: data.fullName || "Parent",
+        full_name: getDisplayName(data.fullName, email),
       });
+      localStorage.setItem("dhatu_auth_email", email.trim());
 
       await signIn();
       await navigate({ to: "/dashboard" });

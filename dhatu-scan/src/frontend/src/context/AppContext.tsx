@@ -10,20 +10,17 @@ import {
   getAssessments,
   saveAssessmentRecord,
 } from "../data/assessmentRepository";
-<<<<<<< HEAD
-import { deleteChild, getChildren, saveChild } from "../data/childRepository";
-=======
 import {
   getChildren,
   saveChild,
   deleteChild,
   replaceChildId as replaceChildIdInRepo,
 } from "../data/childRepository";
->>>>>>> f0e9383e0ea4f8d1f97a6d60c8a5870feaf5c07b
 import {
   getGamification,
   saveGamification,
 } from "../data/gamificationRepository";
+import { db } from "../lib/db";
 import type { Assessment, ChildProfile, GamificationState } from "../types";
 import { calculateXP, getLevel } from "../utils/assessmentLogic";
 import {
@@ -74,6 +71,7 @@ const initialState: AppState = {
 const META_KEYS = {
   INITIALIZED: "dhatu_indexeddb_initialized",
   AUTH: "dhatu_auth",
+  AUTH_EMAIL: "dhatu_auth_email",
 } as const;
 
 function isInitialized(): boolean {
@@ -90,6 +88,21 @@ function isAuthenticated(): boolean {
 
 function setAuthenticated(value: boolean): void {
   localStorage.setItem(META_KEYS.AUTH, value ? "true" : "false");
+}
+
+function setAuthEmail(email: string | null): void {
+  if (email && email.trim().length > 0) {
+    localStorage.setItem(META_KEYS.AUTH_EMAIL, email.trim());
+    return;
+  }
+
+  localStorage.removeItem(META_KEYS.AUTH_EMAIL);
+}
+
+async function syncAuthIdentityFromCurrentUser() {
+  const user = await db.currentUser.get(1);
+  setAuthEmail(user?.email ?? null);
+  return user;
 }
 
 function appReducer(state: AppState, action: AppAction): AppState {
@@ -270,6 +283,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 
   const signIn = useCallback(async () => {
+    await syncAuthIdentityFromCurrentUser();
     setAuthenticated(true);
     const scopedState = await loadScopedState();
     dispatch({ type: "INIT", payload: scopedState });
@@ -277,6 +291,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     setAuthenticated(false);
+    setAuthEmail(null);
     const scopedState = await loadScopedState();
     dispatch({ type: "INIT", payload: scopedState });
   }, [loadScopedState]);

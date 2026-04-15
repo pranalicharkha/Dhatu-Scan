@@ -13,8 +13,9 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useTheme } from "next-themes";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { useApp } from "../context/AppContext";
+import { db } from "../lib/db";
 import { cn } from "../lib/utils";
 import { getLevelProgress } from "../utils/assessmentLogic";
 import { calculateAgeInMonths, formatAgeFromMonths } from "../utils/childAge";
@@ -38,6 +39,17 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/privacy", label: "Privacy", icon: <Shield size={18} /> },
 ];
 
+function getDisplayName(
+  fullName: string | undefined,
+  email: string | undefined,
+): string {
+  const normalizedFullName = fullName?.trim();
+  if (normalizedFullName) return normalizedFullName;
+
+  const emailPrefix = email?.trim().split("@")[0]?.trim();
+  return emailPrefix && emailPrefix.length > 0 ? emailPrefix : "Parent";
+}
+
 export default function Sidebar({
   onToggle,
 }: {
@@ -47,6 +59,7 @@ export default function Sidebar({
   const navigate = useNavigate();
   const { resolvedTheme } = useTheme();
   const { state, activeChild, signOut, setActiveChild } = useApp();
+  const [parentName, setParentName] = useState("Parent");
   const levelProgress = getLevelProgress(state.gamification.xp);
   const isDark = resolvedTheme === "dark";
   const shellBg = isDark ? "#161C24" : "#F2EAE0";
@@ -61,6 +74,17 @@ export default function Sidebar({
     await signOut();
     await navigate({ to: "/" });
   };
+
+  useEffect(() => {
+    let isMounted = true;
+    void db.currentUser.get(1).then((user) => {
+      if (!isMounted) return;
+      setParentName(getDisplayName(user?.full_name, user?.email));
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [state.isAuthenticated]);
 
   return (
     <aside
@@ -264,7 +288,7 @@ export default function Sidebar({
               style={{ backgroundColor: primaryButtonBg }}
             >
               <LogOut size={15} />
-              Logout Parent
+              Logout {parentName}
             </button>
           </div>
           <div

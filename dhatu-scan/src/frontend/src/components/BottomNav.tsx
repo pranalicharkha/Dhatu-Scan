@@ -10,8 +10,9 @@ import {
   Star,
 } from "lucide-react";
 import { motion } from "motion/react";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { cn } from "../lib/utils";
+import { db } from "@/lib/db";
 
 interface NavItem {
   href: string;
@@ -27,15 +28,38 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/privacy", label: "Privacy", icon: <Shield size={20} /> },
 ];
 
+function getDisplayName(
+  fullName: string | undefined,
+  email: string | undefined,
+): string {
+  const normalizedFullName = fullName?.trim();
+  if (normalizedFullName) return normalizedFullName;
+
+  const emailPrefix = email?.trim().split("@")[0]?.trim();
+  return emailPrefix && emailPrefix.length > 0 ? emailPrefix : "Parent";
+}
+
 export default function BottomNav() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { signOut } = useApp();
+  const { signOut, state } = useApp();
+  const [parentName, setParentName] = useState("Parent");
 
   const handleLogout = async () => {
     await signOut();
     await navigate({ to: "/" });
   };
+
+  useEffect(() => {
+    let isMounted = true;
+    void db.currentUser.get(1).then((user) => {
+      if (!isMounted) return;
+      setParentName(getDisplayName(user?.full_name, user?.email));
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [state.isAuthenticated]);
 
   return (
     <nav
@@ -85,7 +109,7 @@ export default function BottomNav() {
               <LogOut size={20} />
             </span>
             <span className="relative z-10 text-[10px] font-medium leading-none">
-              Logout
+              Logout {parentName}
             </span>
           </button>
           <div className="flex min-h-[44px] min-w-[44px] flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-muted-foreground">
