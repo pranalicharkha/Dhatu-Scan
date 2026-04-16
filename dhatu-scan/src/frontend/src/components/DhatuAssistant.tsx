@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { MessageCircle, Bot, X, Send } from 'lucide-react';
 import { chatWithAssistant } from '../lib/backendApi';
 
@@ -61,6 +61,7 @@ const DhatuAssistant: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([
     { id: 1, text: 'I can help you navigate Dhatu Scan, explain scan results, and troubleshoot common issues.', sender: 'bot' }
   ]);
+  const nextMessageId = useRef(2);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(true);
@@ -69,11 +70,11 @@ const DhatuAssistant: React.FC = () => {
     const textToSend = messageText || input.trim();
     if (textToSend && !isLoading) {
       const newMessage: Message = {
-        id: messages.length + 1,
+        id: nextMessageId.current++,
         text: textToSend,
         sender: 'user'
       };
-      setMessages([...messages, newMessage]);
+      setMessages(prev => [...prev, newMessage]);
       setInput('');
       setIsLoading(true);
       setShowSuggestions(false);
@@ -81,14 +82,14 @@ const DhatuAssistant: React.FC = () => {
       try {
         const response = await chatWithAssistant(textToSend);
         const botResponse: Message = {
-          id: messages.length + 2,
+          id: nextMessageId.current++,
           text: response,
           sender: 'bot'
         };
         setMessages(prev => [...prev, botResponse]);
       } catch (error) {
         const errorResponse: Message = {
-          id: messages.length + 2,
+          id: nextMessageId.current++,
           text: 'Sorry, I\'m having trouble connecting. Please try again later.',
           sender: 'bot'
         };
@@ -108,7 +109,7 @@ const DhatuAssistant: React.FC = () => {
       {/* Floating Chat Button */}
       <button
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-r from-teal-500 to-purple-500 text-white shadow-lg hover:from-teal-600 hover:to-purple-600 transition-all duration-300 animate-pulse"
+        className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-r from-teal-500 to-purple-500 text-white shadow-lg hover:from-teal-600 hover:to-purple-600 transition-all duration-300"
         aria-label="Open AI Assistant"
       >
         <MessageCircle size={24} />
@@ -116,7 +117,7 @@ const DhatuAssistant: React.FC = () => {
 
       {/* Chat Modal */}
       {isOpen && (
-        <div className="fixed bottom-20 right-6 z-50 w-96 h-[32rem] bg-slate-50 rounded-2xl shadow-lg border border-gray-200 flex flex-col animate-in slide-in-from-bottom-4 fade-in duration-300">
+        <div className="fixed bottom-20 right-6 z-50 w-96 h-[32rem] bg-slate-50 rounded-2xl shadow-lg border border-gray-200 flex flex-col">
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-teal-500 to-purple-500 text-white rounded-t-2xl shadow-sm">
             <div className="flex items-center gap-3">
@@ -155,7 +156,7 @@ const DhatuAssistant: React.FC = () => {
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleSend()}
+                onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                 className="flex-1 px-4 py-3 border border-gray-200 rounded-full bg-white text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                 placeholder="Ask about login, upload, results, or what to do next..."
                 disabled={isLoading}
