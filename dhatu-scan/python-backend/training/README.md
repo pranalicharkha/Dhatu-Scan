@@ -16,6 +16,10 @@ provides a TensorFlow MobileNetV3 training scaffold in `train_mobilenetv3.py`.
 - Optional `python-backend/training/data/_annotations.csv` with columns like:
   - `filename`
   - `class` (`Healthy` / `Malnourished`)
+- Optional `python-backend/training/data/_annotations.txt` in object-detection export format:
+  - each line starts with the image filename
+  - remaining tokens are `xmin,ymin,xmax,ymax,class_id`
+  - `class_id` must be `0` or `1`
 - Legacy fallback also supported: `python-backend/training/data/images/_annotations.csv`
 - Optional metadata spreadsheet in `python-backend/training/data/`:
   - `.xlsx`, `.xls`, or `.csv`
@@ -30,5 +34,5 @@ python -m training.train_mobilenetv3
 
 ## Notes
 
-- The trainer now merges direct labels, annotation CSV labels, and optional spreadsheet metadata.
+- The trainer now merges direct labels, annotation CSV labels, annotation TXT labels, and optional spreadsheet metadata.
 - If the dataset is too small or class-imbalanced for a meaningful split, the script stops with an explicit error instead of training a misleading model.

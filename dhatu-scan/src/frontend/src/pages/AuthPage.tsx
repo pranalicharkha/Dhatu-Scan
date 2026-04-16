@@ -4,6 +4,7 @@ import { ChevronUp, Instagram, Linkedin, Mail, Phone } from "lucide-react";
 import { motion } from "motion/react";
 import { useTheme } from "next-themes";
 import type { ReactNode } from "react";
+import GlobeHero from "@/components/GlobeHero";
 
 const STEPS = [
   {
@@ -71,7 +72,7 @@ const AFTEREFFECTS = [
     detail: "is the slow yearly improvement, which still is not enough",
   },
   {
-    value: "0 to 5 years",
+    value: "0 to 10 years",
     detail: "is the age group most severely affected by malnutrition",
   },
 ];
@@ -109,16 +110,16 @@ const PALETTE = {
   muted: "#6a5f79",
   white: "#fffaf5",
   buttonDark: "#52456d",
-  darkPage: "#151821",
-  darkPanel: "#202634",
-  darkBlue: "#253747",
-  darkLavender: "#332b45",
-  darkPurple: "#46385f",
-  darkInk: "#f4f1fb",
-  darkMuted: "#b8b1c9",
-  darkHeadingAccent: "#c8b6ff",
-  darkHeadingSoft: "#d9d2ea",
-  darkBorder: "rgba(179, 155, 255, 0.24)",
+  darkPage: "#0a0a0a",
+  darkPanel: "#1a1a1a",
+  darkBlue: "#2a2a2a",
+  darkLavender: "#3a3a3a",
+  darkPurple: "#4a4a4a",
+  darkInk: "#e0e0e0",
+  darkMuted: "#a0a0a0",
+  darkHeadingAccent: "#808080",
+  darkHeadingSoft: "#b0b0b0",
+  darkBorder: "rgba(128, 128, 128, 0.3)",
   darkFooter: "#3a2b53",
 };
 
@@ -137,7 +138,7 @@ function SectionTitle({
     <div className="mx-auto max-w-3xl text-center">
       {eyebrow ? (
         <p
-          className="text-xs font-semibold uppercase tracking-[0.22em]"
+          className="text-base font-semibold uppercase tracking-[0.22em]"
           style={{ color: isDark ? PALETTE.darkHeadingAccent : PALETTE.muted }}
         >
           {eyebrow}
@@ -219,14 +220,9 @@ export default function AuthPage() {
         />
       </div>
 
-      <header className="fixed inset-x-0 top-0 z-50 px-4 py-4 sm:px-6 lg:px-10">
+      <header className="px-4 py-6 sm:px-6 lg:px-10">
         <div
-          className="mx-auto flex max-w-7xl items-center justify-between rounded-full px-4 py-3 backdrop-blur-md sm:px-5"
-          style={{
-            backgroundColor: navbarBackground,
-            border: `1px solid ${navbarBorder}`,
-            boxShadow: navbarShadow,
-          }}
+          className="mx-auto flex max-w-7xl items-center justify-between"
         >
           <Link to="/" className="flex items-center gap-3">
             <div
@@ -274,10 +270,10 @@ export default function AuthPage() {
         </div>
       </header>
 
-      <main className="px-4 pt-28 sm:px-6 lg:px-10">
+      <main className="px-4 pt-8 sm:px-6 lg:px-10">
         <div className="mx-auto max-w-7xl">
-          <section className="grid items-center gap-10 py-8 lg:grid-cols-[1.05fr_0.95fr] lg:py-14">
-            <div className="max-w-2xl">
+          <section className="grid items-center gap-10 py-8 lg:grid-cols-[1fr_1fr] lg:py-14 lg:pl-8">
+            <div className="max-w-2xl lg:ml-4">
               <motion.span
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -295,17 +291,48 @@ export default function AuthPage() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.08 }}
-                className="mt-6 font-display text-5xl font-bold leading-[0.95] sm:text-6xl lg:text-7xl"
+                className="mt-2 font-display text-5xl font-extrabold leading-tight sm:text-6xl lg:text-7xl"
                 style={{ color: primaryText }}
               >
-                Securing childhood growth begins with early detection
+                Turning hidden signs into
                 <span
                   className="block"
                   style={{ color: isDark ? PALETTE.darkHeadingAccent : "#5f5282" }}
                 >
-                  and the dedicated support every family deserves.
+                  lifesaving insights
+                </span>
+                <span
+                  className="block mt-6 text-3xl font-bold"
+                  style={{ color: isDark ? PALETTE.darkHeadingAccent : "#5f5282" }}
+                >
+                  with privacy-first AI
                 </span>
               </motion.h1>
+
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.16 }}
+                className="mt-8"
+              >
+                <Link
+                  to="/register"
+                  className="inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl font-semibold text-white text-base transition-smooth"
+                  style={{
+                    background: "linear-gradient(135deg, #9c8fcb, #7c6ba8)",
+                    boxShadow: "0 0 24px rgba(156, 143, 203, 0.35)",
+                  }}
+                >
+                  <span className="relative z-10">Start Screening</span>
+                  <motion.div
+                    className="absolute inset-0"
+                    style={{ background: "rgba(156, 143, 203, 0.2)" }}
+                    initial={{ x: "-100%" }}
+                    whileHover={{ x: "0%" }}
+                    transition={{ duration: 0.3 }}
+                  />
+                </Link>
+              </motion.div>
 
             </div>
 
@@ -315,30 +342,7 @@ export default function AuthPage() {
               transition={{ delay: 0.18 }}
               className="relative"
             >
-              <div
-                className="overflow-hidden rounded-[2rem] border p-3 shadow-xl"
-                style={{
-                  backgroundColor: heroCardBackground,
-                  borderColor: heroCardBorder,
-                  boxShadow: isDark
-                    ? "0 24px 80px rgba(0, 0, 0, 0.32)"
-                    : "0 24px 80px rgba(82, 69, 109, 0.12)",
-                }}
-              >
-                <div className="relative overflow-hidden rounded-[1.5rem]">
-                  <img
-                    src="/assets/images/mother-child.jpeg"
-                    alt="Mother taking care of her child"
-                    className="h-[420px] w-full object-cover"
-                  />
-                  <div
-                    className="absolute inset-0"
-                    style={{
-                      background: heroOverlay,
-                    }}
-                  />
-                </div>
-              </div>
+              <GlobeHero />
             </motion.div>
           </section>
 
@@ -365,10 +369,10 @@ export default function AuthPage() {
                   <p className="text-sm font-semibold uppercase tracking-[0.18em] opacity-70">
                     Question {index + 1}
                   </p>
-                  <h3 className="mt-4 font-display text-2xl font-semibold">
+                  <h3 className="mt-4 font-display text-2xl font-medium">
                     {card.title}
                   </h3>
-                  <p className="mt-4 text-sm leading-7">{card.desc}</p>
+                  <p className="mt-4 text-base leading-7">{card.desc}</p>
                 </motion.article>
               ))}
             </div>

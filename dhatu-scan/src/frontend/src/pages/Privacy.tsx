@@ -198,12 +198,49 @@ export default function Privacy() {
   const storageKB = (storageBytes / 1024).toFixed(1);
 
   function handleExport() {
-    const json = JSON.stringify(exportPayload, null, 2);
-    const blob = new Blob([json], { type: "application/json" });
+    const lines: string[] = [];
+    lines.push("DHATU-SCAN DATA EXPORT");
+    lines.push(`Exported: ${new Date().toLocaleString()}`);
+    lines.push("");
+    lines.push(`Total Assessments: ${exportPayload.assessments.length}`);
+    lines.push(`Total Children: ${exportPayload.children.length}`);
+    lines.push("");
+    lines.push("── CHILDREN ──");
+    for (const child of exportPayload.children) {
+      lines.push(`  Name: ${child.name}  |  DOB: ${child.dob}  |  Gender: ${child.gender}`);
+    }
+    lines.push("");
+    lines.push("── ASSESSMENTS ──");
+    for (const a of exportPayload.assessments) {
+      lines.push(`  Date: ${new Date(a.date).toLocaleDateString()}`);
+      lines.push(`  Child ID: ${a.childId}`);
+      lines.push(`  Risk Level: ${a.riskLevel}  |  WHO Status: ${a.whoStatus}`);
+      lines.push(`  Final Score: ${a.finalScore}  |  WHO Z-Score: ${a.whoZScore}`);
+      lines.push(`  Height: ${a.height} cm  |  Weight: ${a.weight} kg`);
+      lines.push("");
+    }
+    const content = lines.join("\n");
+    // Build a minimal single-page PDF manually (plain text embedded in PDF structure)
+    const now = new Date().toISOString().slice(0, 10);
+    const escaped = content.replace(/[\\()]/g, (c) => `\\${c}`);
+    const pdfContent = [
+      "%PDF-1.4",
+      "1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj",
+      "2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj",
+      "3 0 obj<</Type/Page/MediaBox[0 0 612 792]/Parent 2 0 R/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj",
+      "5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Courier>>endobj",
+    ];
+    const streamLines = content.split("\n").map((line, i) => `BT /F1 9 Tf 40 ${780 - i * 12} Td (${line.replace(/[\\()]/g, (c) => `\\${c}`)}) Tj ET`).join("\n");
+    const stream = `stream\n${streamLines}\nendstream`;
+    const streamObj = `4 0 obj<</Length ${stream.length}>>\n${stream}\nendobj`;
+    pdfContent.push(streamObj);
+    const xref = pdfContent.join("\n").length;
+    pdfContent.push(`xref\n0 6\n0000000000 65535 f \ntrailer<</Size 6/Root 1 0 R>>\nstartxref\n${xref}\n%%EOF`);
+    const blob = new Blob([pdfContent.join("\n")], { type: "application/pdf" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `dhatu-scan-export-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `dhatu-scan-export-${now}.pdf`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -249,7 +286,7 @@ export default function Privacy() {
           </p>
 
           <div className="flex flex-wrap gap-3 justify-center pt-2">
-            {["100% On-Device", "No Account Needed", "Works Offline"].map(
+            {["100% On-Device", "Works Offline"].map(
               (tag) => (
                 <span
                   key={tag}
@@ -302,42 +339,7 @@ export default function Privacy() {
           </div>
         </section>
 
-        {/* ── HOW WE PROTECT ── */}
-        <section className="space-y-5">
-          <motion.h2
-            initial={{ opacity: 0, y: 12 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.5 }}
-            className="text-2xl font-display font-semibold text-foreground"
-          >
-            How We Protect Your Data
-          </motion.h2>
-          <div className="space-y-3">
-            {STEPS.map((s, i) => (
-              <motion.div
-                key={s.step}
-                initial={{ opacity: 0, x: -16 }}
-                whileInView={{ opacity: 1, x: 0 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.45, delay: i * 0.08 }}
-                className="flex items-start gap-4"
-              >
-                <div className="flex-shrink-0 w-9 h-9 rounded-full gradient-teal flex items-center justify-center text-sm font-bold text-primary-foreground shadow-md">
-                  {s.step}
-                </div>
-                <GlassCard variant="subtle" className="flex-1 p-4">
-                  <p className="font-medium text-foreground text-sm">
-                    {s.title}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {s.desc}
-                  </p>
-                </GlassCard>
-              </motion.div>
-            ))}
-          </div>
-        </section>
+
 
         {/* ── DATA CONTROL CENTER ── */}
         <motion.section
@@ -385,7 +387,7 @@ export default function Privacy() {
                 className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-primary/15 border border-primary/30 text-primary font-medium text-sm transition-smooth hover:bg-primary/25 hover:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary"
               >
                 <Download className="w-4 h-4" />
-                Export Data (JSON)
+                Export Data (PDF)
               </button>
               <button
                 type="button"
@@ -411,39 +413,7 @@ export default function Privacy() {
           </GlassCard>
         </motion.section>
 
-        {/* ── COMPLIANCE SECTION ── */}
-        <motion.section
-          initial={{ opacity: 0, y: 16 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.5 }}
-          className="space-y-5"
-        >
-          <h2 className="text-2xl font-display font-semibold text-foreground">
-            Compliance &amp; Standards
-          </h2>
-          <GlassCard variant="default" className="p-6 space-y-4">
-            <div className="flex items-center gap-3 mb-2">
-              <Shield className="w-5 h-5 text-primary" />
-              <p className="font-medium text-foreground">
-                Compliant with healthcare data principles
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <ComplianceBadge label="HIPAA-Inspired" />
-              <ComplianceBadge label="GDPR-Inspired" />
-              <ComplianceBadge label="WHO Guidelines" />
-              <ComplianceBadge label="Privacy by Design" />
-            </div>
-            <p className="text-xs text-muted-foreground bg-muted/40 rounded-lg px-4 py-3 leading-relaxed">
-              <strong className="text-foreground">Disclaimer:</strong>{" "}
-              Dhatu-Scan is not legally certified under HIPAA or GDPR. These
-              badges represent our commitment to privacy-by-design principles
-              inspired by those regulations. This app is a healthcare prototype
-              intended for educational and research use.
-            </p>
-          </GlassCard>
-        </motion.section>
+
 
         {/* ── FAQ ACCORDION ── */}
         <section className="space-y-4 pb-6">

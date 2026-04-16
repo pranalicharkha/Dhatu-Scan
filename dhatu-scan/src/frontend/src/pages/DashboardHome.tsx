@@ -1,5 +1,15 @@
 import { useApp } from "@/context/AppContext";
 import { useTheme } from "next-themes";
+import type { ReactNode } from "react";
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 const DASHBOARD_BG = "#F2EAE0";
 const SURFACE = "rgba(255, 250, 245, 0.42)";
@@ -9,6 +19,7 @@ const BORDER = "rgba(156, 143, 203, 0.18)";
 const TEXT = "#403552";
 const MUTED = "#6D6578";
 const ACCENT = "#9C8FCB";
+const ACCENT_SOFT = "#6CC7B5";
 const CARD_SHADOW = "0 14px 32px rgba(120, 101, 152, 0.08)";
 const CARD_HOVER = "0 20px 38px rgba(120, 101, 152, 0.14)";
 
@@ -25,6 +36,17 @@ function formatWhoLabel(value: string) {
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function formatCompactDate(value: string) {
+  return new Date(value).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function getMalnutritionChartColor(whoStatus: string) {
+  return whoStatus === "normal" ? "#16A34A" : "#DC2626";
 }
 
 function getAssessmentPriorityScore(assessment: {
@@ -68,62 +90,6 @@ function getRiskCause(assessment: {
   return "Current screening scores suggest this child should be reviewed again soon to prevent worsening risk.";
 }
 
-function AnalysisMeter({
-  label,
-  value,
-  description,
-  fill,
-  surface,
-  border,
-  text,
-  muted,
-}: {
-  label: string;
-  value: number;
-  description: string;
-  fill: string;
-  surface: string;
-  border: string;
-  text: string;
-  muted: string;
-}) {
-  const safeValue = clampPercent(value);
-
-  return (
-    <div
-      className="rounded-2xl p-4"
-      style={{
-        background: surface,
-        border: `1px solid ${border}`,
-      }}
-    >
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-semibold" style={{ color: text }}>
-          {label}
-        </p>
-        <p className="text-sm font-semibold" style={{ color: text }}>
-          {safeValue}%
-        </p>
-      </div>
-      <div
-        className="mt-3 h-3 overflow-hidden rounded-full"
-        style={{ background: "rgba(255,255,255,0.18)" }}
-      >
-        <div
-          className="h-full rounded-full transition-smooth"
-          style={{
-            width: `${safeValue}%`,
-            background: fill,
-          }}
-        />
-      </div>
-      <p className="mt-3 text-sm leading-6" style={{ color: muted }}>
-        {description}
-      </p>
-    </div>
-  );
-}
-
 function StatCard({
   label,
   value,
@@ -164,6 +130,48 @@ function StatCard({
   );
 }
 
+function DashboardCard({
+  children,
+  background,
+  border,
+  shadow,
+  onHover = false,
+}: {
+  children: ReactNode;
+  background: string;
+  border: string;
+  shadow: string;
+  onHover?: boolean;
+}) {
+  return (
+    <div
+      className="rounded-[2rem] p-6 transition-smooth hover:-translate-y-1"
+      style={{
+        background,
+        border: `1px solid ${border}`,
+        boxShadow: shadow,
+        backdropFilter: "blur(16px)",
+      }}
+      onMouseEnter={
+        onHover
+          ? (e) => {
+              e.currentTarget.style.boxShadow = CARD_HOVER;
+            }
+          : undefined
+      }
+      onMouseLeave={
+        onHover
+          ? (e) => {
+              e.currentTarget.style.boxShadow = shadow;
+            }
+          : undefined
+      }
+    >
+      {children}
+    </div>
+  );
+}
+
 export default function DashboardHome() {
   const { state, activeChild, activeAssessments } = useApp();
   const { resolvedTheme } = useTheme();
@@ -182,12 +190,10 @@ export default function DashboardHome() {
   const text = isDark ? "#F3F2FB" : TEXT;
   const muted = isDark ? "#B8B2C9" : MUTED;
   const accent = isDark ? "#B39BFF" : ACCENT;
+  const accentSoft = isDark ? "#73DDC7" : ACCENT_SOFT;
   const cardShadow = isDark
     ? "0 18px 38px rgba(0, 0, 0, 0.28)"
     : CARD_SHADOW;
-  const cardHover = isDark
-    ? "0 22px 44px rgba(0, 0, 0, 0.34)"
-    : CARD_HOVER;
   const allAssessments = state.assessments;
   const highestRiskAssessment = [...allAssessments].sort(
     (a, b) => getAssessmentPriorityScore(b) - getAssessmentPriorityScore(a),
@@ -218,20 +224,43 @@ export default function DashboardHome() {
   const recentSummaryDate = latestOverallAssessment
     ? new Date(latestOverallAssessment.date).toLocaleDateString()
     : null;
+  const selectedChildAssessments = [...activeAssessments].sort(
+    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+  );
+  const selectedChildLatestAssessment =
+    selectedChildAssessments[selectedChildAssessments.length - 1] ?? null;
+  const chartColor = getMalnutritionChartColor(selectedChildLatestAssessment?.whoStatus ?? "");
+  const growthChartData = selectedChildAssessments.map((assessment) => ({
+    date: formatCompactDate(assessment.date),
+    zScore: assessment.haz ?? assessment.whoZScore,
+    score: clampPercent(assessment.finalScore),
+  }));
+  const zScoreTrend =
+    selectedChildAssessments.length >= 2
+      ? (selectedChildAssessments[selectedChildAssessments.length - 1].haz ??
+          selectedChildAssessments[selectedChildAssessments.length - 1].whoZScore) -
+        (selectedChildAssessments[selectedChildAssessments.length - 2].haz ??
+          selectedChildAssessments[selectedChildAssessments.length - 2].whoZScore)
+      : 0;
 
   return (
-    <div className="px-4 py-8 sm:px-6 lg:px-10" style={{ backgroundColor: pageBg }}>
-      <div className="mx-auto max-w-7xl space-y-8">
+    <div
+      className="relative overflow-hidden px-4 py-8 sm:px-6 lg:px-10"
+      style={{ backgroundColor: pageBg }}
+    >
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background: isDark
+            ? "radial-gradient(circle at top left, rgba(179,155,255,0.18), transparent 34%), radial-gradient(circle at 85% 15%, rgba(115,221,199,0.12), transparent 28%), linear-gradient(180deg, rgba(255,255,255,0.02), rgba(20,24,33,0))"
+            : "radial-gradient(circle at top left, rgba(156,143,203,0.20), transparent 34%), radial-gradient(circle at 85% 15%, rgba(108,199,181,0.18), transparent 28%), linear-gradient(180deg, rgba(255,255,255,0.38), rgba(242,234,224,0))",
+        }}
+      />
+
+      <div className="relative mx-auto max-w-7xl space-y-8">
         <section className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-          <div
-            className="rounded-[2rem] p-8 transition-smooth hover:-translate-y-1"
-            style={{
-              background: surface,
-              border: `1px solid ${border}`,
-              boxShadow: cardShadow,
-              backdropFilter: "blur(16px)",
-            }}
-          >
+          <DashboardCard background={surface} border={border} shadow={cardShadow}>
             <p className="text-sm uppercase tracking-[0.24em]" style={{ color: muted }}>
               Dashboard
             </p>
@@ -240,10 +269,10 @@ export default function DashboardHome() {
               <span className="block" style={{ color: accent }}>monitor your child health.</span>
             </h1>
 
-            <div className="mt-8 grid gap-4 sm:grid-cols-3">
-              {allAssessments.length === 0 ? (
+            <div className="mt-8">
+              {!activeChild || growthChartData.length === 0 ? (
                 <div
-                  className="rounded-2xl p-5 sm:col-span-3"
+                  className="rounded-2xl p-5"
                   style={{
                     background: surfaceAlt,
                     border: `1px solid ${border}`,
@@ -252,217 +281,256 @@ export default function DashboardHome() {
                   }}
                 >
                   <p className="text-xs uppercase tracking-[0.2em]" style={{ color: muted }}>
-                    Child Overview
+                    Selected Child Growth
                   </p>
                   <p className="mt-4 text-base leading-7" style={{ color: text }}>
-                    No child screenings are available yet. Complete a screening to see the most urgent health update here.
-                  </p>
-                </div>
-              ) : riskNeedsAttention && highestRiskAssessment && mostAtRiskChild ? (
-                <div
-                  className="rounded-2xl p-5 sm:col-span-3 transition-smooth hover:-translate-y-1"
-                  style={{
-                    background: surfaceAlt,
-                    border: `1px solid ${border}`,
-                    boxShadow: cardShadow,
-                    backdropFilter: "blur(14px)",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.boxShadow = cardHover;
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.boxShadow = cardShadow;
-                  }}
-                >
-                  <p className="text-xs uppercase tracking-[0.2em]" style={{ color: muted }}>
-                    Most Urgent Child Update
-                  </p>
-                  <div className="mt-4 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-                    <div>
-                      <p className="font-display text-3xl font-bold" style={{ color: text }}>
-                        {mostAtRiskChild.name} needs attention first.
-                      </p>
-                      <p className="mt-3 text-base leading-7" style={{ color: muted }}>
-                        {formatRiskLabel(highestRiskAssessment.riskLevel)} malnutrition risk with{" "}
-                        {formatWhoLabel(highestRiskAssessment.whoStatus).toLowerCase()} screening status.
-                      </p>
-                      <p className="mt-4 text-sm leading-6" style={{ color: muted }}>
-                        {getRiskCause(highestRiskAssessment)}
-                      </p>
-                    </div>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div
-                        className="rounded-xl p-4"
-                        style={{ background: surfaceSoft, border: `1px solid ${border}` }}
-                      >
-                        <p className="text-xs" style={{ color: muted }}>Risk Level</p>
-                        <p className="mt-2 text-2xl font-semibold" style={{ color: accent }}>
-                          {formatRiskLabel(highestRiskAssessment.riskLevel)}
-                        </p>
-                      </div>
-                      <div
-                        className="rounded-xl p-4"
-                        style={{ background: surfaceSoft, border: `1px solid ${border}` }}
-                      >
-                        <p className="text-xs" style={{ color: muted }}>Diet Score</p>
-                        <p className="mt-2 text-2xl font-semibold" style={{ color: accent }}>
-                          {clampPercent(highestRiskAssessment.dietaryScore)}%
-                        </p>
-                      </div>
-                      <div
-                        className="rounded-xl p-4"
-                        style={{ background: surfaceSoft, border: `1px solid ${border}` }}
-                      >
-                        <p className="text-xs" style={{ color: muted }}>Growth Score</p>
-                        <p className="mt-2 text-2xl font-semibold" style={{ color: accent }}>
-                          {clampPercent(highestRiskAssessment.finalScore)}%
-                        </p>
-                      </div>
-                      <div
-                        className="rounded-xl p-4"
-                        style={{ background: surfaceSoft, border: `1px solid ${border}` }}
-                      >
-                        <p className="text-xs" style={{ color: muted }}>Main Cause</p>
-                        <p className="mt-2 text-sm font-semibold leading-6" style={{ color: text }}>
-                          {highestRiskAssessment.dietaryScore < 45 || highestRiskAssessment.dietDiversity <= 3
-                            ? "Low diet diversity"
-                            : highestRiskAssessment.recentDiarrhea < 5
-                              ? "Recent diarrhea"
-                              : highestRiskAssessment.waterSource < 5
-                                ? "Unsafe water access"
-                                : highestRiskAssessment.whoStatus !== "normal"
-                                  ? formatWhoLabel(highestRiskAssessment.whoStatus)
-                                  : "Needs follow-up"}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : healthiestAssessment && healthiestChild ? (
-                <div
-                  className="rounded-2xl p-5 sm:col-span-3 transition-smooth hover:-translate-y-1"
-                  style={{
-                    background: surfaceAlt,
-                    border: `1px solid ${border}`,
-                    boxShadow: cardShadow,
-                    backdropFilter: "blur(14px)",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.boxShadow = cardHover;
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.boxShadow = cardShadow;
-                  }}
-                >
-                  <p className="text-xs uppercase tracking-[0.2em]" style={{ color: muted }}>
-                    Positive Child Update
-                  </p>
-                  <div className="mt-4 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-                    <div>
-                      <p className="font-display text-3xl font-bold" style={{ color: text }}>
-                        {healthiestChild.name} is doing well.
-                      </p>
-                      <p className="mt-3 text-base leading-7" style={{ color: muted }}>
-                        No child is currently in potentially high malnutrition risk. The strongest recent outcome is showing low risk and stable growth.
-                      </p>
-                      <p className="mt-4 text-sm leading-6" style={{ color: muted }}>
-                        Diet quality, weight-height indicators, and the overall assessment score are all in a reassuring range for this child.
-                      </p>
-                    </div>
-                    <div className="grid gap-3 sm:grid-cols-3">
-                      <div
-                        className="rounded-xl p-4"
-                        style={{ background: surfaceSoft, border: `1px solid ${border}` }}
-                      >
-                        <p className="text-xs" style={{ color: muted }}>Risk</p>
-                        <p className="mt-2 text-2xl font-semibold" style={{ color: accent }}>
-                          {formatRiskLabel(healthiestAssessment.riskLevel)}
-                        </p>
-                      </div>
-                      <div
-                        className="rounded-xl p-4"
-                        style={{ background: surfaceSoft, border: `1px solid ${border}` }}
-                      >
-                        <p className="text-xs" style={{ color: muted }}>Diet</p>
-                        <p className="mt-2 text-2xl font-semibold" style={{ color: accent }}>
-                          {clampPercent(healthiestAssessment.dietaryScore)}%
-                        </p>
-                      </div>
-                      <div
-                        className="rounded-xl p-4"
-                        style={{ background: surfaceSoft, border: `1px solid ${border}` }}
-                      >
-                        <p className="text-xs" style={{ color: muted }}>Growth</p>
-                        <p className="mt-2 text-2xl font-semibold" style={{ color: accent }}>
-                          {clampPercent(healthiestAssessment.finalScore)}%
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          </div>
-
-          <div
-            className="rounded-[2rem] p-6 transition-smooth hover:-translate-y-1"
-            style={{
-              background: surface,
-              border: `1px solid ${border}`,
-              boxShadow: cardShadow,
-              backdropFilter: "blur(16px)",
-            }}
-          >
-            <p className="text-xs uppercase tracking-[0.22em]" style={{ color: muted }}>
-              Active Profile
-            </p>
-            <div
-              className="mt-4 rounded-2xl p-5"
-              style={{
-                background: surfaceAlt,
-                border: `1px solid ${border}`,
-                backdropFilter: "blur(14px)",
-              }}
-            >
-              <div className="flex items-center gap-4">
-                <div
-                  className="flex h-16 w-16 items-center justify-center rounded-full text-2xl font-bold text-white"
-                  style={{ backgroundColor: "#10C57A" }}
-                >
-                  {activeChild?.name?.slice(0, 2).toUpperCase() ?? "--"}
-                </div>
-                <div>
-                  <p className="font-display text-2xl font-semibold" style={{ color: text }}>
-                    {activeChild?.name ?? "No child selected"}
-                  </p>
-                  <p className="mt-2 text-sm" style={{ color: muted }}>
                     {activeChild
-                      ? `${Math.floor(activeChild.age / 12)} years ${activeChild.age % 12} months`
-                      : "Create or select a child profile during screening."}
+                      ? "Complete at least one screening for the selected child to unlock a growth chart and trend view here."
+                      : "Select a child profile to see their growth history and dashboard insights."}
                   </p>
                 </div>
-              </div>
-              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              ) : (
                 <div
-                  className="rounded-xl p-3"
-                  style={{ background: surfaceSoft, border: `1px solid ${border}` }}
+                  className="rounded-2xl p-5 transition-smooth hover:-translate-y-1"
+                  style={{
+                    background: surfaceAlt,
+                    border: `1px solid ${border}`,
+                    boxShadow: cardShadow,
+                    backdropFilter: "blur(14px)",
+                  }}
                 >
-                  <p className="text-xs" style={{ color: muted }}>Reward Level</p>
-                  <p className="mt-1 font-semibold" style={{ color: text }}>
-                    {state.gamification.levelName}
+                  <p className="text-xs uppercase tracking-[0.2em]" style={{ color: muted }}>
+                    Selected Child Growth
                   </p>
+                  <div className="mt-4 flex flex-col gap-4">
+                    <div>
+                      <p className="font-display text-3xl font-bold" style={{ color: text }}>
+                        {activeChild.name}'s malnourishment progress.
+                      </p>
+                      <div
+                        className="mt-5 inline-flex rounded-2xl px-5 py-4"
+                        style={{ background: surfaceSoft, border: `1px solid ${border}` }}
+                      >
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.18em]" style={{ color: muted }}>
+                            Malnourishment Status
+                          </p>
+                          <p className="mt-2 text-3xl font-semibold" style={{ color: accentSoft }}>
+                            {selectedChildLatestAssessment
+                              ? formatWhoLabel(selectedChildLatestAssessment.whoStatus)
+                              : "N/A"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    <div
+                      className="rounded-2xl p-4"
+                      style={{ background: surfaceSoft, border: `1px solid ${border}` }}
+                    >
+                      <div className="mb-4 flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold" style={{ color: text }}>
+                            Malnutrition Progress
+                          </p>
+                          <p className="text-xs" style={{ color: muted }}>
+                            Latest risk: {selectedChildLatestAssessment ? formatRiskLabel(selectedChildLatestAssessment.riskLevel) : "N/A"}
+                          </p>
+                        </div>
+                        <div
+                          className="rounded-full px-3 py-1 text-xs font-semibold"
+                          style={{
+                            color: text,
+                            background: "rgba(255,255,255,0.14)",
+                            border: `1px solid ${border}`,
+                          }}
+                        >
+                          {selectedChildAssessments.length} checks
+                        </div>
+                      </div>
+                      <div className="h-64">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <AreaChart data={growthChartData} margin={{ top: 8, right: 4, left: -18, bottom: 0 }}>
+                            <defs>
+                              <linearGradient id="growthWeightFill" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor={chartColor} stopOpacity={0.45} />
+                                <stop offset="95%" stopColor={chartColor} stopOpacity={0.04} />
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="4 4" stroke={border} vertical={false} />
+                            <XAxis
+                              dataKey="date"
+                              tick={{ fill: muted, fontSize: 11 }}
+                              axisLine={false}
+                              tickLine={false}
+                            />
+                            <YAxis
+                              tick={{ fill: muted, fontSize: 11 }}
+                              axisLine={false}
+                              tickLine={false}
+                              width={36}
+                            />
+                            <Tooltip
+                              contentStyle={{
+                                background: isDark ? "rgba(29,36,48,0.96)" : "rgba(255,250,245,0.96)",
+                                border: `1px solid ${border}`,
+                                borderRadius: "16px",
+                                color: text,
+                              }}
+                              labelStyle={{ color: text, fontWeight: 600 }}
+                              formatter={(value) => [`${Number(value).toFixed(2)} z`, "WHO Z-Score"]}
+                            />
+                            <Area
+                              type="monotone"
+                              dataKey="zScore"
+                              stroke={chartColor}
+                              strokeWidth={3}
+                              fill="url(#growthWeightFill)"
+                              activeDot={{ r: 5, fill: chartColor }}
+                            />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div
-                  className="rounded-xl p-3"
-                  style={{ background: surfaceSoft, border: `1px solid ${border}` }}
-                >
-                  <p className="text-xs" style={{ color: muted }}>Total XP</p>
-                  <p className="mt-1 font-semibold" style={{ color: text }}>
-                    {state.gamification.xp} XP
-                  </p>
-                </div>
-              </div>
+              )}
             </div>
+          </DashboardCard>
+
+          <div className="space-y-6">
+            <DashboardCard background={surface} border={border} shadow={cardShadow}>
+              <p className="text-xs uppercase tracking-[0.22em]" style={{ color: muted }}>
+                Active Profile
+              </p>
+              <div
+                className="mt-4 rounded-2xl p-5"
+                style={{
+                  background: surfaceAlt,
+                  border: `1px solid ${border}`,
+                  backdropFilter: "blur(14px)",
+                }}
+              >
+                <div className="flex items-center gap-4">
+                  <div
+                    className="flex h-16 w-16 items-center justify-center rounded-full text-2xl font-bold text-white"
+                    style={{
+                      background: `linear-gradient(135deg, ${accentSoft}, #10C57A)`,
+                      boxShadow: "0 12px 28px rgba(16, 197, 122, 0.24)",
+                    }}
+                  >
+                    {activeChild?.name?.slice(0, 2).toUpperCase() ?? "--"}
+                  </div>
+                  <div>
+                    <p className="font-display text-2xl font-semibold" style={{ color: text }}>
+                      {activeChild?.name ?? "No child selected"}
+                    </p>
+                    <p className="mt-2 text-sm" style={{ color: muted }}>
+                      {activeChild
+                        ? `${Math.floor(activeChild.age / 12)} years ${activeChild.age % 12} months`
+                        : "Create or select a child profile during screening."}
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                  <div
+                    className="rounded-xl p-3"
+                    style={{ background: surfaceSoft, border: `1px solid ${border}` }}
+                  >
+                    <p className="text-xs" style={{ color: muted }}>Reward Level</p>
+                    <p className="mt-1 font-semibold" style={{ color: text }}>
+                      {state.gamification.levelName}
+                    </p>
+                  </div>
+                  <div
+                    className="rounded-xl p-3"
+                    style={{ background: surfaceSoft, border: `1px solid ${border}` }}
+                  >
+                    <p className="text-xs" style={{ color: muted }}>Total XP</p>
+                    <p className="mt-1 font-semibold" style={{ color: text }}>
+                      {state.gamification.xp} XP
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </DashboardCard>
+
+            {allAssessments.length === 0 ? null : riskNeedsAttention && highestRiskAssessment && mostAtRiskChild ? (
+              <DashboardCard background={surface} border={border} shadow={cardShadow}>
+                <p className="text-xs uppercase tracking-[0.22em]" style={{ color: muted }}>
+                  Most Urgent Child Update
+                </p>
+                <p className="mt-4 font-display text-2xl font-bold" style={{ color: text }}>
+                  {mostAtRiskChild.name} needs attention first.
+                </p>
+                <p className="mt-3 text-sm leading-7" style={{ color: muted }}>
+                  {formatRiskLabel(highestRiskAssessment.riskLevel)} risk with{" "}
+                  {formatWhoLabel(highestRiskAssessment.whoStatus).toLowerCase()} growth markers.
+                </p>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <div
+                    className="rounded-xl p-4"
+                    style={{ background: surfaceAlt, border: `1px solid ${border}` }}
+                  >
+                    <p className="text-xs" style={{ color: muted }}>Growth Score</p>
+                    <p className="mt-2 text-2xl font-semibold" style={{ color: accent }}>
+                      {clampPercent(highestRiskAssessment.finalScore)}%
+                    </p>
+                  </div>
+                  <div
+                    className="rounded-xl p-4"
+                    style={{ background: surfaceAlt, border: `1px solid ${border}` }}
+                  >
+                    <p className="text-xs" style={{ color: muted }}>Main Cause</p>
+                    <p className="mt-2 text-sm font-semibold leading-6" style={{ color: text }}>
+                      {highestRiskAssessment.dietaryScore < 45 || highestRiskAssessment.dietDiversity <= 3
+                        ? "Low diet diversity"
+                        : highestRiskAssessment.recentDiarrhea < 5
+                          ? "Recent diarrhea"
+                          : highestRiskAssessment.waterSource < 5
+                            ? "Unsafe water access"
+                            : highestRiskAssessment.whoStatus !== "normal"
+                              ? formatWhoLabel(highestRiskAssessment.whoStatus)
+                              : "Needs follow-up"}
+                    </p>
+                  </div>
+                </div>
+                <p className="mt-4 text-sm leading-6" style={{ color: muted }}>
+                  {getRiskCause(highestRiskAssessment)}
+                </p>
+              </DashboardCard>
+            ) : healthiestAssessment && healthiestChild ? (
+              <DashboardCard background={surface} border={border} shadow={cardShadow}>
+                <p className="text-xs uppercase tracking-[0.22em]" style={{ color: muted }}>
+                  Positive Child Update
+                </p>
+                <p className="mt-4 font-display text-2xl font-bold" style={{ color: text }}>
+                  {healthiestChild.name} is holding steady.
+                </p>
+                <p className="mt-3 text-sm leading-7" style={{ color: muted }}>
+                  The strongest recent outcome is showing low risk and stable growth for this child.
+                </p>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <div
+                    className="rounded-xl p-4"
+                    style={{ background: surfaceAlt, border: `1px solid ${border}` }}
+                  >
+                    <p className="text-xs" style={{ color: muted }}>Risk</p>
+                    <p className="mt-2 text-2xl font-semibold" style={{ color: accent }}>
+                      {formatRiskLabel(healthiestAssessment.riskLevel)}
+                    </p>
+                  </div>
+                  <div
+                    className="rounded-xl p-4"
+                    style={{ background: surfaceAlt, border: `1px solid ${border}` }}
+                  >
+                    <p className="text-xs" style={{ color: muted }}>Growth Score</p>
+                    <p className="mt-2 text-2xl font-semibold" style={{ color: accentSoft }}>
+                      {clampPercent(healthiestAssessment.finalScore)}%
+                    </p>
+                  </div>
+                </div>
+              </DashboardCard>
+            ) : null}
           </div>
         </section>
 
@@ -510,15 +578,7 @@ export default function DashboardHome() {
         </section>
 
         <section className="grid gap-6 lg:grid-cols-2">
-          <div
-            className="rounded-[2rem] p-6 transition-smooth hover:-translate-y-1"
-            style={{
-              background: surface,
-              border: `1px solid ${border}`,
-              boxShadow: cardShadow,
-              backdropFilter: "blur(16px)",
-            }}
-          >
+          <DashboardCard background={surface} border={border} shadow={cardShadow}>
             <p className="text-xs uppercase tracking-[0.22em]" style={{ color: muted }}>
               Next Best Actions
             </p>
@@ -542,17 +602,9 @@ export default function DashboardHome() {
                 </div>
               ))}
             </div>
-          </div>
+          </DashboardCard>
 
-          <div
-            className="rounded-[2rem] p-6 transition-smooth hover:-translate-y-1"
-            style={{
-              background: surface,
-              border: `1px solid ${border}`,
-              boxShadow: cardShadow,
-              backdropFilter: "blur(16px)",
-            }}
-          >
+          <DashboardCard background={surface} border={border} shadow={cardShadow}>
             <p className="text-xs uppercase tracking-[0.22em]" style={{ color: muted }}>
               Recent Summary
             </p>
@@ -570,7 +622,7 @@ export default function DashboardHome() {
                   : "There is no recent history to show."}
               </p>
               {latestOverallAssessment && recentChild ? (
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div className="mt-4 grid gap-3 sm:grid-cols-3">
                   <div
                     className="rounded-xl p-3"
                     style={{ background: surfaceSoft, border: `1px solid ${border}` }}
@@ -599,24 +651,12 @@ export default function DashboardHome() {
                     className="rounded-xl p-3"
                     style={{ background: surfaceSoft, border: `1px solid ${border}` }}
                   >
-                    <p className="text-xs" style={{ color: muted }}>Diet Score</p>
+                    <p className="text-xs" style={{ color: muted }}>Risk Status</p>
                     <p className="mt-1 font-semibold" style={{ color: text }}>
-                      {clampPercent(latestOverallAssessment.dietaryScore)}%
+                      {formatRiskLabel(latestOverallAssessment.riskLevel)}
                     </p>
                     <p className="mt-1 text-xs" style={{ color: muted }}>
-                      Based on diet diversity and recent health inputs
-                    </p>
-                  </div>
-                  <div
-                    className="rounded-xl p-3"
-                    style={{ background: surfaceSoft, border: `1px solid ${border}` }}
-                  >
-                    <p className="text-xs" style={{ color: muted }}>Growth Snapshot</p>
-                    <p className="mt-1 font-semibold" style={{ color: text }}>
-                      {latestOverallAssessment.height} cm · {latestOverallAssessment.weight} kg
-                    </p>
-                    <p className="mt-1 text-xs" style={{ color: muted }}>
-                      Final score {clampPercent(latestOverallAssessment.finalScore)}%
+                      WHO status {formatWhoLabel(latestOverallAssessment.whoStatus)}
                     </p>
                   </div>
                 </div>
@@ -626,7 +666,7 @@ export default function DashboardHome() {
                 </p>
               )}
             </div>
-          </div>
+          </DashboardCard>
         </section>
       </div>
     </div>

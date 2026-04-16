@@ -185,6 +185,89 @@ function estimateVisibleSigns(
       visibleSigns.push("Upper body appears proportionally narrow");
       bodyRisk += 12;
     }
+
+    // ── Abdominal distension / belly swelling detection ──────────────────
+    // In kwashiorkor, the belly is disproportionately wide relative to the
+    // shoulder and limb widths. Compare hip width to shoulder width — a hip
+    // region significantly wider than shoulders with thin limbs suggests
+    // abdominal distension (edema/ascites).
+    if (hipWidth > shoulderWidth * 1.25) {
+      visibleSigns.push("Possible abdominal distension (belly wider than shoulders)");
+      bodyRisk += 20;
+    }
+
+    // Belly prominence: midpoint between shoulders and hips is abnormally
+    // far from the body center line compared to limb thickness.
+    const shoulderMidY = (poseLandmarks[11].y + poseLandmarks[12].y) / 2;
+    const hipMidY = (poseLandmarks[23].y + poseLandmarks[24].y) / 2;
+    const torsoLength = Math.abs(hipMidY - shoulderMidY);
+    const torsoToLimb = torsoLength / bodyHeight;
+    // A very short torso relative to total body height with wide hips
+    // suggests a distended belly pushing landmarks outward.
+    if (torsoToLimb < 0.22 && hipRatio > 0.18) {
+      visibleSigns.push("Short torso with wide hip region (potential edema sign)");
+      bodyRisk += 15;
+    }
+  }
+
+  // ── Peripheral edema / limb swelling detection ──────────────────────────
+  // Compare ankle-to-knee distance vs knee-to-hip distance. In peripheral
+  // edema the lower legs appear puffy/swollen, making the ankle region
+  // disproportionately thick relative to the upper leg.
+  const leftAnkle = poseLandmarks[27];
+  const rightAnkle = poseLandmarks[28];
+  const leftKnee = poseLandmarks[25];
+  const rightKnee = poseLandmarks[26];
+  const leftHip = poseLandmarks[23];
+  const rightHip = poseLandmarks[24];
+
+  if (leftAnkle && leftKnee && leftHip) {
+    const lowerLeg = distance(leftAnkle, leftKnee);
+    const upperLeg = distance(leftKnee, leftHip);
+    if (upperLeg > 0.01) {
+      const legRatio = lowerLeg / upperLeg;
+      // Swollen lower legs appear shorter relative to upper (landmarks
+      // pushed outward by puffiness compress the apparent length).
+      if (legRatio < 0.65) {
+        visibleSigns.push("Left lower limb proportions suggest possible swelling");
+        bodyRisk += 12;
+      }
+    }
+  }
+  if (rightAnkle && rightKnee && rightHip) {
+    const lowerLeg = distance(rightAnkle, rightKnee);
+    const upperLeg = distance(rightKnee, rightHip);
+    if (upperLeg > 0.01) {
+      const legRatio = lowerLeg / upperLeg;
+      if (legRatio < 0.65) {
+        visibleSigns.push("Right lower limb proportions suggest possible swelling");
+        bodyRisk += 12;
+      }
+    }
+  }
+
+  // ── Wrist/ankle thickness indicator ────────────────────────────────────
+  // Puffy wrists: distance from wrist to elbow is unusually short compared
+  // to forearm (swelling makes joints appear thicker / closer together).
+  const leftWrist = poseLandmarks[15];
+  const rightWrist = poseLandmarks[16];
+  const leftElbow = poseLandmarks[13];
+  const rightElbow = poseLandmarks[14];
+  if (leftWrist && leftElbow && poseLandmarks[11]) {
+    const wristToElbow = distance(leftWrist, leftElbow);
+    const elbowToShoulder = distance(leftElbow, poseLandmarks[11]);
+    if (elbowToShoulder > 0.01 && wristToElbow / elbowToShoulder < 0.55) {
+      visibleSigns.push("Left wrist-to-elbow ratio suggests possible joint swelling");
+      bodyRisk += 8;
+    }
+  }
+  if (rightWrist && rightElbow && poseLandmarks[12]) {
+    const wristToElbow = distance(rightWrist, rightElbow);
+    const elbowToShoulder = distance(rightElbow, poseLandmarks[12]);
+    if (elbowToShoulder > 0.01 && wristToElbow / elbowToShoulder < 0.55) {
+      visibleSigns.push("Right wrist-to-elbow ratio suggests possible joint swelling");
+      bodyRisk += 8;
+    }
   }
 
   if (faceLandmarks.length >= 300) {
@@ -199,6 +282,12 @@ function estimateVisibleSigns(
       if (faceRatio < 0.82) {
         visibleSigns.push("Gaunt facial pattern");
         bodyRisk += 18;
+      }
+      // ── Facial puffiness / moon face (edema) ──────────────────────────
+      // Abnormally round face (width ≈ height) can indicate facial edema.
+      if (faceRatio > 1.15) {
+        visibleSigns.push("Facial puffiness detected (possible facial edema)");
+        bodyRisk += 14;
       }
     }
   }
@@ -388,6 +477,69 @@ function computeModelConfidence(predictions: number[]) {
   return Math.max(...exp) / sum;
 }
 
+function detectSkinAbnormalities(canvas: HTMLCanvasElement): string[] {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return [];
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+  const signs: string[] = [];
+
+  let count = 0;
+  let sumL = 0, sumA = 0, sumB = 0;
+
+  // Sample roughly every 16th pixel to save processing time
+  for (let i = 0; i < data.length; i += 64) {
+    const r = data[i], g = data[i + 1], b = data[i + 2];
+    
+    // Simple background threshold (ignore very dark pixels)
+    if (r > 30 || g > 30 || b > 30) {
+      // Rough sRGB to CIELAB conversion
+      let xR = r / 255.0, xG = g / 255.0, xB = b / 255.0;
+      xR = xR > 0.04045 ? Math.pow((xR + 0.055) / 1.055, 2.4) : xR / 12.92;
+      xG = xG > 0.04045 ? Math.pow((xG + 0.055) / 1.055, 2.4) : xG / 12.92;
+      xB = xB > 0.04045 ? Math.pow((xB + 0.055) / 1.055, 2.4) : xB / 12.92;
+
+      xR = xR * 100; xG = xG * 100; xB = xB * 100;
+
+      const x = xR * 0.4124 + xG * 0.3576 + xB * 0.1805;
+      const y = xR * 0.2126 + xG * 0.7152 + xB * 0.0722;
+      const z = xR * 0.0193 + xG * 0.1192 + xB * 0.9505;
+
+      const valX = x / 95.047;
+      const valY = y / 100.000;
+      const valZ = z / 108.883;
+
+      const fX = valX > 0.008856 ? Math.pow(valX, 1 / 3) : (7.787 * valX) + (16 / 116);
+      const fY = valY > 0.008856 ? Math.pow(valY, 1 / 3) : (7.787 * valY) + (16 / 116);
+      const fZ = valZ > 0.008856 ? Math.pow(valZ, 1 / 3) : (7.787 * valZ) + (16 / 116);
+
+      const L = (116 * fY) - 16;
+      const a = 500 * (fX - fY);
+      const labB = 200 * (fY - fZ);
+
+      sumL += L; sumA += a; sumB += labB;
+      count++;
+    }
+  }
+
+  if (count > 100) {
+    const meanL = sumL / count;
+    const meanA = sumA / count;
+    const meanB = sumB / count;
+
+    // High lightness and low redness -> pallor
+    if (meanL > 65 && meanA < 10) {
+      signs.push("Skin pallor detected (possible anemia or nutrient deficiency)");
+    }
+    // High yellowness (b* channel) -> yellowish/jaundice
+    if (meanB > 22) {
+      signs.push("Yellowish skin tinge detected (possible jaundice indicator)");
+    }
+  }
+
+  return signs;
+}
+
 export async function preprocessAndAnalyzeImage(
   input: ImagePipelineInput,
 ): Promise<ImagePipelineResult> {
@@ -403,6 +555,9 @@ export async function preprocessAndAnalyzeImage(
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
   ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+  // Analyze skin abnormalities from the raw pixels before modifying canvas
+  const skinSigns = detectSkinAbnormalities(canvas);
 
   const { qualityBrightness, qualityContrast } = applyCanvasPreprocessing(canvas);
   const landmarkCoverage = clamp(
@@ -428,10 +583,12 @@ export async function preprocessAndAnalyzeImage(
   const faceMasked = applyFaceMask(canvas, faceBounds);
   const maskedImageDataUrl = canvas.toDataURL("image/jpeg", 0.92);
 
-  const { visibleSigns, bodyRisk } = estimateVisibleSigns(
+  const { visibleSigns: estimatedSigns, bodyRisk } = estimateVisibleSigns(
     input.poseLandmarks,
     input.faceLandmarks,
   );
+  
+  const visibleSigns = [...skinSigns, ...estimatedSigns];
 
   let modelConfidence = 0;
   let modelName = "Heuristic preprocessing fallback";

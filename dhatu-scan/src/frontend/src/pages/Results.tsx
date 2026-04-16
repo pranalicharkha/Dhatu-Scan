@@ -369,46 +369,40 @@ function WHOZScoreBar({
 function WHOIndicatorCard({
   label,
   title,
-  subtitle,
+  fullForm,
   value,
   status,
 }: {
   label: string;
   title: string;
-  subtitle: string;
+  fullForm: string;
   value: number;
   status: WHOStatus;
 }) {
   const color = getWHOStatusColor(status);
 
   return (
-    <div className="rounded-2xl border border-border/50 bg-background/40 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
-              {label}
-            </span>
-            <span className="text-[10px] text-muted-foreground/80">
-              {subtitle}
-            </span>
-          </div>
-          <h3 className="mt-1 text-sm font-semibold text-foreground">{title}</h3>
-        </div>
+    <div className="rounded-2xl border border-border/50 bg-background/40 p-4 flex flex-col gap-1">
+      {/* Row: abbreviation + z-score badge */}
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+          {label}
+        </span>
         <span
           className="rounded-full px-2 py-0.5 text-[10px] font-medium"
           style={{ color, background: `${color}14` }}
         >
-          {value > 0 ? "+" : ""}
-          {value.toFixed(2)}
+          {value > 0 ? "+" : ""}{value.toFixed(2)}
         </span>
       </div>
-      <div className="mt-3 text-sm font-medium capitalize" style={{ color }}>
+      {/* Title */}
+      <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+      {/* Status */}
+      <div className="text-sm font-medium capitalize" style={{ color }}>
         {status.replace(/_/g, " ")}
       </div>
-      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-        {WHO_STATUS_COPY[status]}
-      </p>
+      {/* Full form */}
+      <p className="text-[11px] text-muted-foreground/70 mt-0.5">{fullForm}</p>
     </div>
   );
 }
@@ -982,28 +976,14 @@ export default function Results() {
               <span className="flex items-center gap-1.5">
                 📅 <span>{assessmentDate}</span>
               </span>
-              {assessment.cameraAnalyzed && assessment.cameraConfidence && (
-                <span className="flex items-center gap-1.5">
-                  📷 AI Confidence:{" "}
-                  <strong className="text-primary">
-                    {assessment.cameraConfidence}%
-                  </strong>
-                </span>
-              )}
+
             </div>
             <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
               <span>
                 <strong className="text-foreground">{childName}</strong>
               </span>
               <span>{assessmentDate}</span>
-              {assessment.cameraAnalyzed && assessment.cameraConfidence && (
-                <span>
-                  AI Confidence:{" "}
-                  <strong className="text-primary">
-                    {assessment.cameraConfidence}%
-                  </strong>
-                </span>
-              )}
+
             </div>
           </div>
         </motion.div>
@@ -1370,28 +1350,28 @@ export default function Results() {
               <WHOIndicatorCard
                 label="WAZ"
                 title="Underweight"
-                subtitle={formatStatus(assessment.underweightStatus ?? assessment.whoStatus)}
+                fullForm="Weight-for-Age Z-score"
                 value={assessment.waz ?? assessment.whoZScore}
                 status={assessment.underweightStatus ?? assessment.whoStatus}
               />
               <WHOIndicatorCard
                 label="HAZ"
                 title="Stunting"
-                subtitle={formatStatus(assessment.stuntingStatus ?? assessment.whoStatus)}
+                fullForm="Height-for-Age Z-score"
                 value={assessment.haz ?? assessment.whoZScore}
                 status={assessment.stuntingStatus ?? assessment.whoStatus}
               />
               <WHOIndicatorCard
                 label="WHZ"
                 title="Wasting"
-                subtitle={formatStatus(assessment.wastingStatus ?? assessment.whoStatus)}
+                fullForm="Weight-for-Height Z-score"
                 value={assessment.whz ?? assessment.whoZScore}
                 status={assessment.wastingStatus ?? assessment.whoStatus}
               />
               <WHOIndicatorCard
                 label="BAZ"
-                title="BMI for age"
-                subtitle="Body mass index"
+                title="BMI for Age"
+                fullForm="BMI-for-Age Z-score"
                 value={
                   assessment.baz ??
                   Number(
@@ -1443,10 +1423,7 @@ export default function Results() {
                 label="Face Masking"
                 value={a.faceMasked ? "Applied" : "Not confirmed"}
               />
-              <ReportRow
-                label="Camera Confidence"
-                value={`${a.cameraConfidence ?? 0}%`}
-              />
+
             </div>
             <div className="mt-4 rounded-2xl border border-border/50 bg-background/30 p-4">
               <div className="text-xs uppercase tracking-wide text-muted-foreground">
@@ -1479,10 +1456,7 @@ export default function Results() {
               <ReportRow label="Age At Assessment" value={`${a.age} months`} />
               <ReportRow label="Height" value={`${a.height} cm`} />
               <ReportRow label="Weight" value={`${a.weight} kg`} />
-              <ReportRow
-                label="Water Source"
-                value={WATER_SOURCE_COPY[a.waterSource] ?? "Unknown"}
-              />
+
             </div>
           </GlassCard>
         </div>

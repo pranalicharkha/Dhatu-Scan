@@ -67,7 +67,7 @@ const TIPS = [
 
 // ── Steps ─────────────────────────────────────────────────────────────────────
 const STEPS = [
-  { label: "Camera Analysis", step: 1 },
+  { label: "Camera Capture", step: 1 },
   { label: "Child Details", step: 2 },
   { label: "Results", step: 3 },
 ] as const;
@@ -1122,19 +1122,7 @@ export default function Camera() {
             )}
           </div>
 
-          {/* Confidence score badge */}
-          <div className="absolute top-3 right-10 flex items-center gap-1.5 px-2.5 py-1 rounded-full glass-card border border-white/15">
-            <motion.div
-              animate={{ scale: [1, 1.3, 1] }}
-              transition={{ duration: 1.5, repeat: Number.POSITIVE_INFINITY }}
-              className={`w-1.5 h-1.5 rounded-full ${isHighConfidence ? "bg-primary" : "bg-yellow-400"}`}
-            />
-            <span
-              className={`text-[10px] font-semibold ${isHighConfidence ? "text-primary" : "text-yellow-400"}`}
-            >
-              AI {confidence}%
-            </span>
-          </div>
+
 
           {/* Face blur badge */}
           <motion.div
@@ -1201,7 +1189,7 @@ export default function Camera() {
                     Analyzing…
                   </p>
                   <p className="text-muted-foreground text-xs mt-1">
-                    AI scanning body proportions
+                    Scanning body proportions
                   </p>
                 </div>
               </motion.div>

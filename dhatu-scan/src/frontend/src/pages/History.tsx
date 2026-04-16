@@ -222,16 +222,6 @@ function AssessmentCard({
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
                   {[
                     {
-                      label: "Wasting",
-                      value: `${assessment.wastingScore}`,
-                      unit: "/100",
-                    },
-                    {
-                      label: "Dietary Risk",
-                      value: `${assessment.dietaryScore}`,
-                      unit: "/100",
-                    },
-                    {
                       label: "HAZ",
                       value: (assessment.haz ?? assessment.whoZScore).toFixed(2),
                       unit: "",
@@ -263,13 +253,6 @@ function AssessmentCard({
                       label: "Diet Div.",
                       value: `${assessment.dietDiversity}`,
                       unit: "/10",
-                    },
-                    {
-                      label: "Camera",
-                      value: assessment.cameraAnalyzed
-                        ? `${assessment.cameraConfidence ?? 0}%`
-                        : "N/A",
-                      unit: "",
                     },
                   ].map(({ label, value, unit }) => (
                     <div key={label} className="bg-white/5 rounded-lg p-2.5">

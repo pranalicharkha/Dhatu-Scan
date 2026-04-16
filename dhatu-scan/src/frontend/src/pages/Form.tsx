@@ -1,13 +1,12 @@
 import GlassCard from "@/components/GlassCard";
 import { useApp } from "@/context/AppContext";
-import { getCameraAnalysisSession } from "@/lib/cameraAnalysisSession";
-import type { Assessment, WaterSourceType } from "@/types/index";
 import { isBackendConfigured, submitAssessmentToBackend } from "@/lib/backendApi";
+import { getCameraAnalysisSession } from "@/lib/cameraAnalysisSession";
+import type { Assessment, WaterSourceType } from "@/types";
 import {
   applyWHORiskFloor,
   calculateBMI,
   calculateDietaryScore,
-  calculateFinalScore,
   calculateImageRiskScore,
   calculateIntegratedRiskScore,
   calculateWHOZScore,
@@ -23,7 +22,7 @@ import { useMemo, useState } from "react";
 interface FormState {
   height: string;
   weight: string;
-  dietDiversity: number;
+  dietGroups: string[];
   waterSourceType: WaterSourceType;
   recentDiarrhea: boolean;
   breastfed: boolean;
@@ -34,7 +33,7 @@ interface FormState {
 const INITIAL_FORM: FormState = {
   height: "",
   weight: "",
-  dietDiversity: 5,
+  dietGroups: [],
   waterSourceType: "piped",
   recentDiarrhea: false,
   breastfed: false,
@@ -43,9 +42,9 @@ const INITIAL_FORM: FormState = {
 };
 
 const STEPS = [
-  { title: "Body Measurements", description: "Height, weight, and BMI check" },
-  { title: "Dietary Assessment", description: "Food, water, and recent illness" },
-  { title: "Lifestyle Details", description: "Additional health context" },
+  { title: "Body Measurements", description: "" },
+  { title: "Dietary Assessment", description: "" },
+  { title: "Lifestyle Details", description: "" },
 ];
 
 const WATER_SOURCE_OPTIONS: {
@@ -53,24 +52,22 @@ const WATER_SOURCE_OPTIONS: {
   label: string;
   icon: string;
 }[] = [
-  { value: "piped", label: "Tap / Piped Water", icon: "🚿" },
-  { value: "borehole", label: "Borehole / Well", icon: "🪣" },
-  { value: "surface", label: "River / Surface", icon: "🌊" },
-  { value: "unprotected", label: "Unprotected Source", icon: "⚠️" },
+  { value: "piped", label: "Tap / Piped Water", icon: "Tap" },
+  { value: "borehole", label: "Borehole / Well", icon: "Well" },
+  { value: "surface", label: "Purified Water", icon: "Safe" },
+  { value: "unprotected", label: "Unprotected Source", icon: "Risk" },
 ];
 
-const DIET_DIVERSITY_LABELS: Record<number, string> = {
-  1: "Very Limited",
-  2: "Very Limited",
-  3: "Limited",
-  4: "Below Average",
-  5: "Moderate",
-  6: "Moderate",
-  7: "Good",
-  8: "Good",
-  9: "Diverse",
-  10: "Very Diverse",
-};
+const DIET_GROUP_OPTIONS = [
+  "Grains or cereals",
+  "Pulses or beans",
+  "Milk or curd",
+  "Eggs",
+  "Meat or fish",
+  "Green leafy vegetables",
+  "Other vegetables",
+  "Fruits",
+] as const;
 
 const inputCls =
   "w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground transition-smooth focus:outline-none focus:border-teal-500/60 focus:ring-1 focus:ring-teal-500/30";
@@ -82,6 +79,10 @@ const slideVariants = {
   center: { x: 0, opacity: 1 },
   exit: (dir: number) => ({ x: dir > 0 ? -60 : 60, opacity: 0 }),
 };
+
+function calculateDietDiversityFromGroups(groups: string[]) {
+  return Math.round((groups.length / DIET_GROUP_OPTIONS.length) * 10);
+}
 
 function getBMICategory(bmi: number): {
   label: string;
@@ -138,9 +139,25 @@ export default function Form() {
       : activeChild.age;
   }, [activeChild]);
 
+  const bmi =
+    form.height && form.weight
+      ? calculateBMI(Number(form.weight), Number(form.height))
+      : 0;
+  const bmiCategory = getBMICategory(bmi);
+  const dietDiversity = calculateDietDiversityFromGroups(form.dietGroups);
+
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
     setErrors((prev) => ({ ...prev, [key]: undefined }));
+  }
+
+  function toggleDietGroup(group: string) {
+    setForm((prev) => ({
+      ...prev,
+      dietGroups: prev.dietGroups.includes(group)
+        ? prev.dietGroups.filter((item) => item !== group)
+        : [...prev.dietGroups, group],
+    }));
   }
 
   function validateStep(currentStep: number) {
@@ -175,8 +192,7 @@ export default function Form() {
   }
 
   async function handleSubmit() {
-    if (!activeChild) return;
-    if (!cameraSession?.ready) return;
+    if (!activeChild || !cameraSession?.ready) return;
 
     setIsSubmitting(true);
 
@@ -201,6 +217,7 @@ export default function Form() {
       let stuntingStatus: Assessment["stuntingStatus"];
       let wastingStatus: Assessment["wastingStatus"];
       let usedBackend = false;
+
       const whoResult = calculateWHOZScore(
         height,
         weight,
@@ -217,7 +234,7 @@ export default function Form() {
             gender: activeChild.gender,
             heightCm: height,
             weightKg: weight,
-            dietDiversity: form.dietDiversity,
+            dietDiversity,
             waterSourceType: form.waterSourceType,
             recentDiarrhea: form.recentDiarrhea,
             diarrheaFrequency: form.recentDiarrhea ? 10 : 0,
@@ -246,18 +263,22 @@ export default function Form() {
       }
 
       if (!usedBackend) {
-        const bmi = calculateBMI(weight, height);
-        wastingScore = calculateWastingScore(bmi, height, weight, ageMonths);
-        dietaryScore = calculateDietaryScore(
-          form.dietDiversity,
-          waterScore,
-          diarrheaScore,
-        );
         const imageRiskScore = calculateImageRiskScore(
           cameraSession.imageRiskScore,
           cameraSession.qualityScore,
           cameraSession.faceLandmarksDetected,
           cameraSession.bodyLandmarksDetected,
+        );
+        wastingScore = calculateWastingScore(
+          calculateBMI(weight, height),
+          height,
+          weight,
+          ageMonths,
+        );
+        dietaryScore = calculateDietaryScore(
+          dietDiversity,
+          waterScore,
+          diarrheaScore,
         );
         finalScore = calculateIntegratedRiskScore(
           wastingScore,
@@ -306,7 +327,7 @@ export default function Form() {
         underweightStatus,
         stuntingStatus,
         wastingStatus,
-        dietDiversity: form.dietDiversity,
+        dietDiversity,
         waterSource: waterScore,
         recentDiarrhea: diarrheaScore,
         cameraAnalyzed: true,
@@ -326,31 +347,6 @@ export default function Form() {
       setIsSubmitting(false);
     }
   }
-
-  const bmi =
-    form.height && form.weight
-      ? calculateBMI(Number(form.weight), Number(form.height))
-      : 0;
-  const bmiCategory = getBMICategory(bmi);
-  const waterScore = waterSourceToScore(form.waterSourceType);
-  const diarrheaScore = form.recentDiarrhea ? 0 : 10;
-  const dietaryPreview = calculateDietaryScore(
-    form.dietDiversity,
-    waterScore,
-    diarrheaScore,
-  );
-  const dietaryRiskLabel =
-    dietaryPreview <= 30
-      ? "Low Risk"
-      : dietaryPreview <= 60
-        ? "Moderate Risk"
-        : "High Risk";
-  const dietaryRiskColor =
-    dietaryPreview <= 30
-      ? "text-green-400"
-      : dietaryPreview <= 60
-        ? "text-yellow-400"
-        : "text-red-400";
 
   if (!activeChild) {
     return (
@@ -416,15 +412,11 @@ export default function Form() {
           transition={{ duration: 0.5 }}
         >
           <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary">
-            <span>📋</span>
-            <span>Child Assessment Form</span>
+            <span>Assessment</span>
           </div>
           <h1 className="mb-1 font-display text-2xl font-bold text-foreground">
             New Health Assessment
           </h1>
-          <p className="text-sm text-muted-foreground">
-            Screening for {activeChild.name} using the saved child profile
-          </p>
         </motion.div>
 
         <GlassCard variant="elevated" className="mb-6 rounded-[2rem] p-5">
@@ -438,7 +430,6 @@ export default function Form() {
               </h2>
               <p className="mt-2 text-sm text-muted-foreground">
                 {formatAgeFromMonths(ageMonths)} · {activeChild.gender}
-                {activeChild.dateOfBirth ? ` · DOB ${activeChild.dateOfBirth}` : ""}
               </p>
             </div>
             <Link
@@ -468,7 +459,7 @@ export default function Form() {
                         : "border border-white/10 bg-white/5 text-muted-foreground"
                   }`}
                 >
-                  {index < step ? "✓" : index + 1}
+                  {index < step ? "OK" : index + 1}
                 </div>
                 <span
                   className={`mt-1 hidden text-center text-[10px] transition-smooth sm:block ${
@@ -487,13 +478,8 @@ export default function Form() {
               transition={{ duration: 0.4, ease: "easeInOut" }}
             />
           </div>
-          <div className="mt-2 flex items-center justify-between">
-            <span className="text-xs text-muted-foreground">
-              Step {step + 1} of {STEPS.length}
-            </span>
-            <span className="text-xs text-muted-foreground">
-              {STEPS[step].description}
-            </span>
+          <div className="mt-2 text-xs text-muted-foreground">
+            Step {step + 1} of {STEPS.length}
           </div>
         </motion.div>
 
@@ -508,7 +494,7 @@ export default function Form() {
               exit="exit"
               transition={{ duration: 0.3, ease: "easeInOut" }}
             >
-              {step === 0 && (
+              {step === 0 ? (
                 <StepBodyMeasurements
                   form={form}
                   errors={errors}
@@ -516,25 +502,24 @@ export default function Form() {
                   bmi={bmi}
                   bmiCategory={bmiCategory}
                 />
-              )}
+              ) : null}
 
-              {step === 1 && (
+              {step === 1 ? (
                 <StepDietaryAssessment
                   form={form}
                   update={update}
-                  dietaryPreview={dietaryPreview}
-                  dietaryRiskLabel={dietaryRiskLabel}
-                  dietaryRiskColor={dietaryRiskColor}
+                  toggleDietGroup={toggleDietGroup}
+                  dietDiversity={dietDiversity}
                 />
-              )}
+              ) : null}
 
-              {step === 2 && (
+              {step === 2 ? (
                 <StepLifestyle
                   form={form}
                   update={update}
                   ageYears={ageMonths / 12}
                 />
-              )}
+              ) : null}
             </motion.div>
           </AnimatePresence>
 
@@ -563,7 +548,7 @@ export default function Form() {
                   onClick={handleNext}
                   className="rounded-xl px-6 py-2.5 text-sm font-semibold text-white shadow-lg transition-smooth hover:opacity-90 gradient-teal"
                 >
-                  Next →
+                  Next
                 </button>
               ) : (
                 <button
@@ -601,11 +586,7 @@ function StepBodyMeasurements({
 }) {
   return (
     <div className="space-y-6">
-      <StepHeader
-        icon="📏"
-        title={STEPS[0].title}
-        description={STEPS[0].description}
-      />
+      <StepHeader title={STEPS[0].title} />
 
       <div className="grid grid-cols-2 gap-4">
         <div>
@@ -622,7 +603,7 @@ function StepBodyMeasurements({
             onChange={(e) => update("height", e.target.value)}
             className={inputCls}
           />
-          {errors.height && <p className={errorCls}>{errors.height}</p>}
+          {errors.height ? <p className={errorCls}>{errors.height}</p> : null}
         </div>
 
         <div>
@@ -640,7 +621,7 @@ function StepBodyMeasurements({
             onChange={(e) => update("weight", e.target.value)}
             className={inputCls}
           />
-          {errors.weight && <p className={errorCls}>{errors.weight}</p>}
+          {errors.weight ? <p className={errorCls}>{errors.weight}</p> : null}
         </div>
       </div>
 
@@ -671,43 +652,45 @@ function StepBodyMeasurements({
 function StepDietaryAssessment({
   form,
   update,
-  dietaryPreview,
-  dietaryRiskLabel,
-  dietaryRiskColor,
+  toggleDietGroup,
+  dietDiversity,
 }: StepProps & {
-  dietaryPreview: number;
-  dietaryRiskLabel: string;
-  dietaryRiskColor: string;
+  toggleDietGroup: (group: string) => void;
+  dietDiversity: number;
 }) {
   return (
     <div className="space-y-6">
-      <StepHeader
-        icon="🥗"
-        title={STEPS[1].title}
-        description={STEPS[1].description}
-      />
+      <StepHeader title={STEPS[1].title} />
 
       <div>
-        <div className="mb-2 flex items-center justify-between">
-          <label className={`${labelCls} mb-0`} htmlFor="dietDiversity">
-            Diet Diversity
-          </label>
+        <div className="mb-3 flex items-center justify-between">
+          <label className={`${labelCls} mb-0`}>Diet Diversity</label>
           <span className="text-sm font-semibold text-primary">
-            {form.dietDiversity}/10 - {DIET_DIVERSITY_LABELS[form.dietDiversity]}
+            {form.dietGroups.length} selected · {dietDiversity}/10
           </span>
         </div>
-        <input
-          id="dietDiversity"
-          type="range"
-          min={1}
-          max={10}
-          value={form.dietDiversity}
-          onChange={(e) => update("dietDiversity", Number(e.target.value))}
-          className="h-2 w-full cursor-pointer appearance-none rounded-full bg-white/10 accent-teal-500"
-        />
-        <div className="mt-1 flex justify-between">
-          <span className="text-[10px] text-muted-foreground">Very Limited</span>
-          <span className="text-[10px] text-muted-foreground">Very Diverse</span>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {DIET_GROUP_OPTIONS.map((group) => {
+            const checked = form.dietGroups.includes(group);
+            return (
+              <label
+                key={group}
+                className={`flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-sm transition-smooth ${
+                  checked
+                    ? "border-teal-500/50 bg-teal-500/10 text-foreground"
+                    : "border-white/10 bg-white/5 text-muted-foreground hover:bg-white/10"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggleDietGroup(group)}
+                  className="h-4 w-4 rounded border-white/20 bg-transparent accent-teal-500"
+                />
+                <span>{group}</span>
+              </label>
+            );
+          })}
         </div>
       </div>
 
@@ -725,7 +708,9 @@ function StepDietaryAssessment({
                   : "border-white/10 bg-white/5 text-muted-foreground hover:bg-white/10"
               }`}
             >
-              <span>{option.icon}</span>
+              <span className="text-xs font-semibold uppercase tracking-[0.16em]">
+                {option.icon}
+              </span>
               <span>{option.label}</span>
             </button>
           ))}
@@ -748,35 +733,11 @@ function StepDietaryAssessment({
                   : "border-white/10 bg-white/5 text-muted-foreground hover:bg-white/10"
               }`}
             >
-              {value ? "⚠️ Yes" : "✅ No"}
+              {value ? "Yes" : "No"}
             </button>
           ))}
         </div>
       </fieldset>
-
-      <motion.div className="rounded-xl border border-white/10 bg-white/5 p-4" layout>
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="mb-1 text-xs uppercase tracking-wider text-muted-foreground">
-              Dietary Risk Preview
-            </p>
-            <p className={`font-mono text-xl font-bold ${dietaryRiskColor}`}>
-              {dietaryPreview.toFixed(0)} / 100
-            </p>
-          </div>
-          <span
-            className={`rounded-full border px-3 py-1 text-sm font-semibold ${
-              dietaryPreview <= 30
-                ? "border-green-500/30 bg-green-500/10 text-green-400"
-                : dietaryPreview <= 60
-                  ? "border-yellow-500/30 bg-yellow-500/10 text-yellow-400"
-                  : "border-red-500/30 bg-red-500/10 text-red-400"
-            }`}
-          >
-            {dietaryRiskLabel}
-          </span>
-        </div>
-      </motion.div>
     </div>
   );
 }
@@ -787,20 +748,16 @@ function StepLifestyle({
   ageYears,
 }: StepProps & { ageYears: number }) {
   const vaccinationOptions = [
-    { value: "up_to_date" as const, label: "Up to Date", icon: "✅" },
-    { value: "partial" as const, label: "Partial", icon: "⚡" },
-    { value: "not_vaccinated" as const, label: "Not Vaccinated", icon: "❌" },
+    { value: "up_to_date" as const, label: "Up to Date", icon: "Yes" },
+    { value: "partial" as const, label: "Partial", icon: "Some" },
+    { value: "not_vaccinated" as const, label: "Not Vaccinated", icon: "No" },
   ];
 
   return (
     <div className="space-y-6">
-      <StepHeader
-        icon="🏥"
-        title={STEPS[2].title}
-        description={STEPS[2].description}
-      />
+      <StepHeader title={STEPS[2].title} />
 
-      {ageYears < 2 && (
+      {ageYears < 2 ? (
         <fieldset className="m-0 border-0 p-0">
           <legend className={labelCls}>Currently Breastfeeding?</legend>
           <div className="flex gap-3">
@@ -815,12 +772,12 @@ function StepLifestyle({
                     : "border-white/10 bg-white/5 text-muted-foreground hover:bg-white/10"
                 }`}
               >
-                {value ? "👶 Yes" : "🥛 No"}
+                {value ? "Yes" : "No"}
               </button>
             ))}
           </div>
         </fieldset>
-      )}
+      ) : null}
 
       <fieldset className="m-0 border-0 p-0">
         <legend className={labelCls}>Vaccination Status</legend>
@@ -861,23 +818,13 @@ function StepLifestyle({
 }
 
 function StepHeader({
-  icon,
   title,
-  description,
 }: {
-  icon: string;
   title: string;
-  description: string;
 }) {
   return (
-    <div className="mb-2 flex items-center gap-4 border-b border-white/8 pb-4">
-      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-2xl gradient-teal">
-        {icon}
-      </div>
-      <div>
-        <h2 className="font-display text-lg font-semibold text-foreground">{title}</h2>
-        <p className="text-sm text-muted-foreground">{description}</p>
-      </div>
+    <div className="mb-2 border-b border-white/8 pb-4">
+      <h2 className="font-display text-lg font-semibold text-foreground">{title}</h2>
     </div>
   );
 }

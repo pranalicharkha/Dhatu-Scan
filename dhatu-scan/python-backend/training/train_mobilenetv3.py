@@ -12,6 +12,7 @@ DATA_DIR = ROOT / "data"
 IMAGES_DIR = DATA_DIR / "images"
 LABELS_CSV = DATA_DIR / "labels.csv"
 ANNOTATIONS_CSV = DATA_DIR / "_annotations.csv"
+ANNOTATIONS_TXT = DATA_DIR / "_annotations.txt"
 LEGACY_ANNOTATIONS_CSV = IMAGES_DIR / "_annotations.csv"
 ARTIFACTS_DIR = ROOT / "artifacts"
 
@@ -58,37 +59,66 @@ def _load_direct_labels() -> pd.DataFrame:
 
 
 def _load_annotation_labels() -> pd.DataFrame:
+    frames: list[pd.DataFrame] = []
+
     annotations_path = ANNOTATIONS_CSV if ANNOTATIONS_CSV.exists() else LEGACY_ANNOTATIONS_CSV
-    if not annotations_path.exists():
+    if annotations_path.exists():
+        frame = _standardize_columns(pd.read_csv(annotations_path))
+        image_col = _pick_column(frame.columns, IMAGE_NAME_COLUMNS)
+        class_col = _pick_column(frame.columns, ("class", "label"))
+        if image_col is None or class_col is None:
+            raise ValueError("_annotations.csv must contain filename and class/label columns.")
+
+        label_map = {
+            "malnourished": 1,
+            "healthy": 0,
+            "normal": 0,
+            "non_malnourished": 0,
+            "non-malnourished": 0,
+        }
+
+        rows: list[dict[str, object]] = []
+        for _, row in frame.iterrows():
+            raw_value = str(row[class_col]).strip().lower()
+            if raw_value not in label_map:
+                continue
+            rows.append(
+                {
+                    "image_name": str(row[image_col]).strip(),
+                    "label": label_map[raw_value],
+                }
+            )
+
+        frames.append(pd.DataFrame(rows, columns=["image_name", "label"]))
+
+    if ANNOTATIONS_TXT.exists():
+        txt_rows: list[dict[str, object]] = []
+        for raw_line in ANNOTATIONS_TXT.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+
+            parts = line.split()
+            image_name = parts[0].strip()
+            class_ids = {
+                int(box.split(",")[-1])
+                for box in parts[1:]
+                if box.count(",") == 4 and box.split(",")[-1].isdigit()
+            }
+            if len(class_ids) != 1:
+                continue
+
+            class_id = class_ids.pop()
+            if class_id not in {0, 1}:
+                continue
+            txt_rows.append({"image_name": image_name, "label": class_id})
+
+        frames.append(pd.DataFrame(txt_rows, columns=["image_name", "label"]))
+
+    if not frames:
         return pd.DataFrame(columns=["image_name", "label"])
 
-    frame = _standardize_columns(pd.read_csv(annotations_path))
-    image_col = _pick_column(frame.columns, IMAGE_NAME_COLUMNS)
-    class_col = _pick_column(frame.columns, ("class", "label"))
-    if image_col is None or class_col is None:
-        raise ValueError("_annotations.csv must contain filename and class/label columns.")
-
-    label_map = {
-        "malnourished": 1,
-        "healthy": 0,
-        "normal": 0,
-        "non_malnourished": 0,
-        "non-malnourished": 0,
-    }
-
-    rows: list[dict[str, object]] = []
-    for _, row in frame.iterrows():
-        raw_value = str(row[class_col]).strip().lower()
-        if raw_value not in label_map:
-            continue
-        rows.append(
-            {
-                "image_name": str(row[image_col]).strip(),
-                "label": label_map[raw_value],
-            }
-        )
-
-    return pd.DataFrame(rows, columns=["image_name", "label"]).drop_duplicates("image_name")
+    return pd.concat(frames, ignore_index=True).drop_duplicates("image_name")
 
 
 def _load_metadata() -> pd.DataFrame:

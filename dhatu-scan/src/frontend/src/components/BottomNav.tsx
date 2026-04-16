@@ -1,5 +1,6 @@
 import { useApp } from "@/context/AppContext";
 import ThemeToggle from "./ThemeToggle";
+import { useTheme } from "next-themes";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import {
   Activity,
@@ -43,7 +44,12 @@ export default function BottomNav() {
   const location = useLocation();
   const navigate = useNavigate();
   const { signOut, state } = useApp();
+  const { resolvedTheme } = useTheme();
   const [parentName, setParentName] = useState("Parent");
+
+  const isDark = resolvedTheme === "dark";
+  const shellBg = isDark ? "#161C24" : "#F2EAE0";
+  const shellBorder = isDark ? "#2A3342" : "#d7cabb";
 
   const handleLogout = async () => {
     await signOut();
@@ -68,8 +74,8 @@ export default function BottomNav() {
       data-ocid="bottom-nav"
     >
       <div
-        className="px-2 pt-2 pb-safe"
-        style={{ backgroundColor: "#F2EAE0", borderTop: "1px solid #d7cabb" }}
+        className="px-2 pt-2 pb-safe transition-colors duration-300"
+        style={{ backgroundColor: shellBg, borderTop: `1px solid ${shellBorder}` }}
       >
         <div className="flex items-center justify-around">
           {NAV_ITEMS.map((item) => {

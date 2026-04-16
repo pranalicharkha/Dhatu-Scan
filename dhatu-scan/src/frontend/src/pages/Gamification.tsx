@@ -581,7 +581,7 @@ export default function Gamification() {
         <GlassCard variant="default" animate delay={0.15} className="p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-              🏅 Badge Collection
+              Badge Collection
             </h3>
             <span className="text-xs text-primary font-medium">
               {unlockedBadges.length}/{displayBadges.length} Unlocked
@@ -603,7 +603,7 @@ export default function Gamification() {
         {recentBadges.length > 0 && (
           <GlassCard variant="default" animate delay={0.2} className="p-5">
             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">
-              🎉 Recent Achievements
+               Recent Achievements
             </h3>
             <div className="space-y-3">
               {recentBadges.map((badge, i) => (
@@ -683,7 +683,7 @@ export default function Gamification() {
               </p>
               <div className="flex items-center justify-between">
                 <span className="text-xs text-accent font-semibold">
-                  🎁 +50 Bonus XP on completion
+                  +50 Bonus XP on completion
                 </span>
                 <Link
                   to="/form"
@@ -701,7 +701,7 @@ export default function Gamification() {
         <GlassCard variant="subtle" animate delay={0.3} className="p-5">
           <div className="flex items-center gap-3 mb-3">
             <div className="w-10 h-10 rounded-xl bg-secondary/20 border border-secondary/30 flex items-center justify-center">
-              🏆
+              
             </div>
             <div>
               <h3 className="text-sm font-bold text-foreground">
@@ -749,11 +749,11 @@ export default function Gamification() {
           </h3>
           <div className="space-y-2">
             {[
-              { action: "Complete an assessment", xp: 50, icon: "📋" },
-              { action: "Use camera analysis", xp: 20, icon: "📷" },
-              { action: "Child scores Low Risk", xp: 30, icon: "💚" },
-              { action: "Monthly checkup on time", xp: 50, icon: "📅" },
-              { action: "Unlock a badge", xp: "varies", icon: "🏅" },
+              { action: "Complete an assessment", xp: 50 },
+              { action: "Use camera analysis", xp: 20 },
+              { action: "Child scores Low Risk", xp: 30 },
+              { action: "Monthly checkup on time", xp: 50 },
+              { action: "Unlock a badge", xp: "varies" },
             ].map((item, i) => (
               <motion.div
                 key={item.action}
@@ -764,7 +764,7 @@ export default function Gamification() {
                 transition={{ duration: 0.3, delay: i * 0.05 }}
               >
                 <div className="flex items-center gap-2">
-                  <span className="text-base">{item.icon}</span>
+                  <span className="text-base"></span>
                   <span className="text-sm text-foreground">{item.action}</span>
                 </div>
                 <span className="text-xs font-bold text-primary">
