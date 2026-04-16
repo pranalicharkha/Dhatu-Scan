@@ -3,25 +3,12 @@ import { useApp } from "@/context/AppContext";
 import { API_BASE } from "@/lib/api";
 import { getCurrentUserToken, getCurrentUserEmail } from "@/data/userRepository";
 import type { ChildProfile, Gender } from "@/types";
-import {
-  calculateAgeInMonths,
-  formatAgeFromMonths,
-} from "@/utils/childAge";
+import { formatAgeFromMonths, calculateAgeInMonths } from "@/utils/childAge";
 import { Link } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "motion/react";
+import { useTheme } from "next-themes";
 import { useMemo, useState } from "react";
 
-const PALETTE = {
-  page: "#F2EAE0",
-  soft: "rgba(255, 250, 245, 0.4)",
-  border: "rgba(156, 143, 203, 0.18)",
-  ink: "#403552",
-  muted: "#6D6578",
-  accent: "#9C8FCB",
-  blue: "#B5D1DA",
-  white: "#FFFAF5",
-  red: "#e05c5c",
-};
 
 type ChildFormState = {
   name: string;
@@ -61,6 +48,30 @@ export default function ChildProfilesPage() {
   const [apiMsg, setApiMsg] = useState("");
   const [editingChildId, setEditingChildId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<ChildFormState>(INITIAL_FORM);
+  const { resolvedTheme } = useTheme();
+
+  const isDark = resolvedTheme === "dark";
+  const PALETTE = isDark ? {
+    page: "transparent",
+    soft: "rgba(29, 36, 48, 0.4)",
+    border: "rgba(124, 107, 192, 0.22)",
+    ink: "#F3F2FB",
+    muted: "#B8B2C9",
+    accent: "#B39BFF",
+    blue: "rgba(179,155,255,0.18)",
+    white: "rgba(35, 44, 58, 0.82)",
+    red: "#ef4444",
+  } : {
+    page: "transparent",
+    soft: "rgba(255, 250, 245, 0.4)",
+    border: "rgba(156, 143, 203, 0.18)",
+    ink: "#403552",
+    muted: "#6D6578",
+    accent: "#9C8FCB",
+    blue: "#B5D1DA",
+    white: "#FFFAF5",
+    red: "#e05c5c",
+  };
 
   const sortedChildren = useMemo(
     () =>
@@ -650,9 +661,9 @@ export default function ChildProfilesPage() {
                                 onClick={() => handleDeleteChild(child)}
                                 className="rounded-full px-3 py-2.5 text-sm font-semibold transition-smooth"
                                 style={{
-                                  backgroundColor: "#fde8e8",
+                                  backgroundColor: isDark ? "rgba(239, 68, 68, 0.1)" : "#fde8e8",
                                   color: PALETTE.red,
-                                  border: "1px solid #f5c2c2",
+                                  border: isDark ? "1px solid rgba(239, 68, 68, 0.2)" : "1px solid #f5c2c2",
                                 }}
                                 title="Delete"
                               >

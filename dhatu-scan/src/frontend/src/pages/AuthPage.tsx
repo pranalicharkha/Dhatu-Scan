@@ -1,7 +1,8 @@
 import { useApp } from "@/context/AppContext";
 import { Link, Navigate } from "@tanstack/react-router";
 import { ChevronUp, Instagram, Linkedin, Mail, Phone } from "lucide-react";
-import { motion } from "motion/react";
+import { motion, AnimatePresence } from "motion/react";
+import ThemeToggle from "@/components/ThemeToggle";
 import { useTheme } from "next-themes";
 import type { ReactNode } from "react";
 import GlobeHero from "@/components/GlobeHero";
@@ -244,7 +245,10 @@ export default function AuthPage() {
             </div>
           </Link>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center justify-between gap-3 sm:gap-4 w-full sm:w-auto">
+            <div className="hidden sm:block">
+              <ThemeToggle compact />
+            </div>
             <Link
               to="/login"
               className="rounded-full px-5 py-2 text-sm font-semibold transition-smooth"

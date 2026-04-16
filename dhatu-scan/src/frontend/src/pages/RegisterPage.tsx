@@ -3,6 +3,7 @@ import { API_BASE } from "@/lib/api";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { motion } from "motion/react";
 import { useState } from "react";
+import ThemeToggle from "@/components/ThemeToggle";
 import { useTheme } from "next-themes";
 
 
@@ -109,20 +110,23 @@ export default function RegisterPage() {
 
       <div className="mx-auto max-w-7xl">
         <div className="mb-8 flex items-center justify-between">
-          <Link to="/" className="text-sm font-semibold" style={{ color: primaryText }}>
-            Back
+          <Link to="/" className="text-sm font-semibold transition-smooth hover:opacity-80" style={{ color: primaryText }}>
+            ← Home
           </Link>
-          <Link
-            to="/login"
-            className="rounded-full px-5 py-2 text-sm font-semibold transition-smooth"
-            style={{
-              backgroundColor: badgeBackground,
-              color: primaryText,
-              border: `1px solid ${badgeBorder}`,
-            }}
-          >
-            Login
-          </Link>
+          <div className="flex items-center gap-4">
+            <ThemeToggle compact />
+            <Link
+              to="/login"
+              className="rounded-full px-5 py-2 text-sm font-semibold transition-smooth"
+              style={{
+                backgroundColor: badgeBackground,
+                color: primaryText,
+                border: `1px solid ${badgeBorder}`,
+              }}
+            >
+              Login
+            </Link>
+          </div>
         </div>
 
         <div className="grid items-start gap-10 lg:grid-cols-[1fr_0.9fr]">
