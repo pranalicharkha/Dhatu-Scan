@@ -209,3 +209,11 @@ export async function uploadImageToBackend(params: {
   }
   return response.json() as Promise<UploadedImageResult>;
 }
+
+export async function chatWithAssistant(message: string): Promise<string> {
+  const response = await requestJson<{ response: string }>("/chat", {
+    method: "POST",
+    body: JSON.stringify({ message }),
+  });
+  return response.response;
+}
