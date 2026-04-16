@@ -26,6 +26,15 @@ This opens:
 - Python backend at `http://127.0.0.1:8000`
 - Frontend Vite dev server in current terminal
 
+If you need manual PowerShell startup, use PowerShell-friendly navigation like this:
+
+```powershell
+Set-Location -Path 'C:\Dhatu-Scan\dhatu-scan\src\frontend'
+npm run dev
+```
+
+> Note: `cd /d ...` is a valid CMD command, but not a PowerShell command. Use `Set-Location -Path ...` in PowerShell.
+
 ## Run separately (optional)
 
 Backend:

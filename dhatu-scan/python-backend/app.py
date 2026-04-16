@@ -22,6 +22,12 @@ from jose import JWTError, jwt
 import bcrypt
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+import os
+
+try:
+    import openai
+except ImportError:
+    openai = None
 
 try:
     import tensorflow as tf
@@ -176,6 +182,12 @@ class ChildResponse(BaseModel):
 
 class ExportResponse(BaseModel):
     downloadUrl: str
+
+class ChatRequest(BaseModel):
+    message: str
+
+class ChatResponse(BaseModel):
+    response: str
 
 
 TRAINING_DATASET_URL = "https://platform.who.int/nutrition/malnutrition-database/database-search"
@@ -911,3 +923,120 @@ def export_data(current_user: Parent = Depends(get_current_user)):
     # Mock generating a CSV/PDF link
     mock_url = f"https://api.dhatu-scan.com/exports/{current_user.email}_data.csv"
     return ExportResponse(downloadUrl=mock_url)
+
+
+@app.post("/chat", response_model=ChatResponse)
+def chat_with_assistant(request: ChatRequest):
+    message = request.message.strip()
+    lower_message = message.lower()
+
+    if openai:
+        api_key = os.getenv("OPENAI_API_KEY")
+        if api_key:
+            try:
+                openai.api_key = api_key
+                system_prompt = """
+You are an intelligent AI assistant integrated into the "Dhatu Scan" web application.
+
+About the system:
+Dhatu Scan is an AI-powered platform that scans, analyzes, and provides insights based on user input data (such as images, reports, or health/metal-related data depending on module). The goal is to help users understand results, guide them through the system, and improve decision-making.
+
+Your responsibilities:
+
+* Help users navigate the platform (login, upload, scan, view results)
+* Explain scan results in simple and clear language
+* Provide meaningful insights and suggestions based on analysis
+* Assist users in troubleshooting issues
+* Guide users step-by-step when needed
+
+Behavior rules:
+
+* Be friendly, conversational, and helpful
+* Keep answers clear and not too long
+* Avoid technical jargon unless user is advanced
+* If unsure, say "I'm not sure, but I can help you figure it out"
+* Ask follow-up questions if user input is unclear
+
+Context-aware responses:
+
+* If user uploads data → explain what the scan means
+* If user is confused → simplify explanation
+* If user asks "what next?" → suggest logical next steps
+* If user is new → guide from beginning (login → upload → scan → results)
+
+Feature explanations:
+
+* Scanning: Explain how the system analyzes input
+* Dashboard: Describe insights, graphs, and results
+* Reports: Help interpret results clearly
+* Alerts/Predictions: Explain risks or findings simply
+
+Troubleshooting:
+
+* Login issues → suggest checking credentials or reset
+* Upload errors → guide file format/size
+* No results → suggest retry or proper input
+
+Tone:
+
+* Friendly and supportive (like a smart assistant)
+* Slightly casual but professional
+* Avoid robotic replies
+
+Restrictions:
+
+* Do not give harmful, illegal, or misleading advice
+* Do not make false claims
+* Stay focused on Dhatu Scan platform
+
+Advanced intelligence:
+
+* Detect user intent (confused, beginner, expert)
+* Adapt explanation level accordingly
+* Suggest useful features user may not know
+* Encourage better usage of the platform
+
+AI Explanation Mode:
+
+* Break down predictions into simple meaning
+* Explain confidence level if available
+* Avoid complex ML terms unless asked
+* Provide actionable suggestions based on results
+
+Example:
+User: "I uploaded file but don't understand result"
+→ Explain result in simple terms + what it means + what to do next
+
+User: "How to use this website?"
+→ Guide step-by-step from login to results
+
+Always aim to make Dhatu Scan easy, clear, and helpful for every user.
+"""
+                response = openai.ChatCompletion.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": message}
+                    ],
+                    max_tokens=300,
+                    temperature=0.7
+                )
+                ai_response = response.choices[0].message.content.strip()
+                return ChatResponse(response=ai_response)
+            except Exception:
+                pass
+
+    if "login" in lower_message or "sign in" in lower_message or "password" in lower_message:
+        return ChatResponse(response="To log in, use your email and password on the login screen. If you cannot sign in, try resetting your password or checking your credentials.")
+    if "upload" in lower_message or "file" in lower_message or "failed" in lower_message or "failing" in lower_message:
+        return ChatResponse(response="To upload data, go to the screening page, choose the correct child, and upload a supported image. If it fails, check the file size and format, then try again.")
+    if "result" in lower_message or "scan" in lower_message or "understand" in lower_message:
+        return ChatResponse(response="After scanning, the dashboard shows the child’s status, risk levels, and suggestions. I can help explain the result if you tell me what you see.")
+    if "what next" in lower_message or "next" in lower_message or "should i" in lower_message:
+        return ChatResponse(response="If your scan shows a risk or abnormal result, review the recommendations and consider follow-up actions like a nutrition plan or medical checkup.")
+    if "dashboard" in lower_message or "reports" in lower_message or "statistics" in lower_message:
+        return ChatResponse(response="The dashboard gives insights on growth, nutrition, and risk levels. Use it to compare progress and find the next recommended step.")
+    if "help" in lower_message or "how" in lower_message or "what" in lower_message:
+        return ChatResponse(response="I’m here to help with Dhatu Scan. Ask me about login, upload steps, results, or what to do next.")
+
+    return ChatResponse(response="I’m not sure, but I can help you figure it out. Tell me a bit more about what you are trying to do.")
