@@ -1,5 +1,6 @@
 FROM python:3.11-slim
 
+# Force redeploy - version 2.0
 WORKDIR /app
 
 # Minimal system dependencies for opencv-python-headless
