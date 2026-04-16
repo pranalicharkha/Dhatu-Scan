@@ -133,6 +133,22 @@ async function syncAssessment(
       return true; // Assume success for deletes
     }
 
+    // Get child name from children state if available
+    const { withStore, STORES } = await import("./db");
+    const child = await withStore<{name: string; gender: string} | undefined>(
+      STORES.children,
+      "readonly",
+      (store) => store.get(assessment.childId),
+    );
+
+    // Convert waterSource number to string literal
+    const waterSourceMap: Record<number, "piped" | "borehole" | "surface" | "unprotected"> = {
+      0: "piped",
+      1: "borehole",
+      2: "surface",
+      3: "unprotected",
+    };
+
     const response = await fetch(`${API_BASE}/assessment`, {
       method: "POST",
       headers: {
@@ -141,21 +157,29 @@ async function syncAssessment(
       },
       body: JSON.stringify({
         childId: assessment.childId,
+        childName: child?.name ?? "Unknown",
         anthropometry: {
           ageMonths: assessment.age,
+          gender: child?.gender ?? "other",
           heightCm: assessment.height,
           weightKg: assessment.weight,
         },
         dietary: {
           dietDiversity: assessment.dietDiversity,
-          waterSource: assessment.waterSource,
+          waterSource: waterSourceMap[assessment.waterSource] ?? "unprotected",
           recentDiarrhea: assessment.recentDiarrhea > 0,
+          diarrheaFrequency: null,
+          breastfed: null,
+          mealsPerDay: null,
         },
         capture: {
+          mode: "upload",
           bodyLandmarksDetected: assessment.bodyLandmarksDetected ?? 0,
           faceLandmarksDetected: assessment.faceLandmarksDetected ?? 0,
           faceMasked: assessment.faceMasked ?? false,
+          modelName: assessment.imageModelName ?? "python-backend",
           modelConfidence: assessment.cameraConfidence ?? 0,
+          embeddingRiskHint: null,
         },
       }),
     });

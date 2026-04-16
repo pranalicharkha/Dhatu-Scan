@@ -33,40 +33,22 @@ const CONFETTI_DATA = Array.from({ length: 40 }, (_, i) => ({
 
 const AVATAR_STAGES = {
   1: {
-    shirt: "#f59e0b",
-    shirtShadow: "#b45309",
-    accent: "#fde68a",
+    shirt: "#ef4444",
+    shirtShadow: "#dc2626",
+    accent: "#fca5a5",
     scale: 0.92,
   },
   2: {
-    shirt: "#f97316",
-    shirtShadow: "#c2410c",
-    accent: "#fdba74",
-    scale: 0.96,
-  },
-  3: {
-    shirt: "#14b8a6",
-    shirtShadow: "#0f766e",
-    accent: "#99f6e4",
+    shirt: "#f59e0b",
+    shirtShadow: "#d97706",
+    accent: "#fcd34d",
     scale: 1,
   },
-  4: {
-    shirt: "#06b6d4",
-    shirtShadow: "#0e7490",
-    accent: "#a5f3fc",
-    scale: 1.04,
-  },
-  5: {
+  3: {
     shirt: "#22c55e",
-    shirtShadow: "#15803d",
-    accent: "#bbf7d0",
+    shirtShadow: "#16a34a",
+    accent: "#86efac",
     scale: 1.08,
-  },
-  6: {
-    shirt: "#3b82f6",
-    shirtShadow: "#1d4ed8",
-    accent: "#bfdbfe",
-    scale: 1.12,
   },
 } as const;
 

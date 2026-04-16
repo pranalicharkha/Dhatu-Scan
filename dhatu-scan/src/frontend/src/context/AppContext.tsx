@@ -203,6 +203,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         // Delete dummy/sample children
         await deleteDummyChildren();
         
+        // Fix children without ownerEmail by assigning to current user
+        await fixOrphanedChildren();
+        
         // Initialize with empty state - no sample data
         markInitialized();
 
@@ -277,11 +280,68 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }
         }
         
+        // Also delete assessments with dummy child names (orphaned assessments)
+        const allAssessments = await withStore<{id: string; childId: string}[]>(
+          STORES.assessments,
+          "readonly",
+          (store) => store.getAll(),
+        );
+        
+        let deletedOrphanedAssessments = 0;
+        for (const assessment of allAssessments) {
+          // Check if the childId references a dummy child (already deleted)
+          if (!allChildren.find(c => c.id === assessment.childId)) {
+            await withStore(STORES.assessments, "readwrite", (store) =>
+              store.delete(assessment.id),
+            );
+            deletedOrphanedAssessments++;
+          }
+        }
+        
+        if (deletedOrphanedAssessments > 0) {
+          console.log(`[Init] Deleted ${deletedOrphanedAssessments} orphaned assessments`);
+        }
+        
         if (deletedCount > 0) {
           console.log(`[Init] Deleted ${deletedCount} dummy children`);
         }
       } catch (e) {
         console.error("[Init] Failed to delete dummy children:", e);
+      }
+    }
+
+    async function fixOrphanedChildren() {
+      try {
+        // Fix children without ownerEmail by assigning them to current user
+        const { withStore, STORES } = await import("../data/db");
+        const ownerEmail = localStorage.getItem("dhatu_auth_email");
+        if (!ownerEmail) return;
+
+        const allChildren = await withStore<{id: string; name: string; ownerEmail?: string}[]>(
+          STORES.children,
+          "readonly",
+          (store) => store.getAll(),
+        );
+
+        let fixedCount = 0;
+        for (const child of allChildren) {
+          if (!child.ownerEmail) {
+            await withStore(STORES.children, "readwrite", (store) =>
+              store.put({
+                ...child,
+                ownerEmail,
+              }),
+            );
+            fixedCount++;
+            console.log(`[Init] Fixed orphaned child: ${child.name} assigned to ${ownerEmail}`);
+          }
+        }
+
+        if (fixedCount > 0) {
+          console.log(`[Init] Fixed ${fixedCount} orphaned children`);
+        }
+      } catch (e) {
+        console.error("[Init] Failed to fix orphaned children:", e);
       }
     }
 

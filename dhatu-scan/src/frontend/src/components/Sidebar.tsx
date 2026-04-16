@@ -8,7 +8,6 @@ import {
   Plus,
   Shield,
   ShieldCheck,
-  Star,
   Stethoscope,
 } from "lucide-react";
 import { motion } from "motion/react";
@@ -34,7 +33,7 @@ const NAV_ITEMS: NavItem[] = [
     label: "Results & Statistics",
     icon: <Activity size={18} />,
   },
-  { href: "/rewards", label: "Rewards", icon: <Star size={18} /> },
+  { href: "/rewards", label: "Rewards", icon: <ShieldCheck size={18} /> },
   { href: "/consult", label: "Consult", icon: <Stethoscope size={18} /> },
   { href: "/privacy", label: "Privacy", icon: <Shield size={18} /> },
 ];

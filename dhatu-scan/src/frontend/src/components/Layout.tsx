@@ -9,6 +9,7 @@ import FloatingParticles from "./FloatingParticles";
 import LoadingSpinner from "./LoadingSpinner";
 import Sidebar from "./Sidebar";
 import ThemeToggle from "./ThemeToggle";
+import DhatuAssistant from "./DhatuAssistant";
 
 export default function Layout() {
   const location = useLocation();
@@ -75,6 +76,8 @@ export default function Layout() {
       >
         <ThemeToggle />
       </div>
+
+      {showShell && <DhatuAssistant />}
 
       <div
         className={
