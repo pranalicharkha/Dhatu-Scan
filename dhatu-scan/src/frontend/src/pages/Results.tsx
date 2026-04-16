@@ -752,21 +752,15 @@ export default function Results() {
   const { state, activeChild } = useApp();
   const [recheckOpen, setRecheckOpen] = useState(false);
 
-  // Determine assessment to display
-  const latestFromContext =
+  // Determine assessment to display - ONLY show assessment for active child
+  const assessment: Assessment | null =
     activeChild && state.assessments.length > 0
-      ? (state.assessments.find((a) => a.childId === activeChild.id) ?? null)
+      ? (state.assessments
+          .filter((a) => a.childId === activeChild.id)
+          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0] ?? null)
       : null;
 
-  const assessment: Assessment | null =
-    latestFromContext ??
-    (state.assessments.length > 0
-      ? [...state.assessments].sort(
-          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
-        )[0]
-      : null);
-
-  // If truly no data, show placeholder
+  // If no assessment for this child, show placeholder
   if (!assessment) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-6 gap-6">
@@ -775,7 +769,9 @@ export default function Results() {
           No Assessment Found
         </h2>
         <p className="text-muted-foreground text-center max-w-xs">
-          Complete a child assessment to view the results dashboard.
+          {activeChild
+            ? `No assessment data found for ${activeChild.name}. Complete an assessment to view results.`
+            : "Select a child and complete an assessment to view results."}
         </p>
         <Button
           className="gradient-teal text-primary-foreground border-0 px-8"
@@ -833,6 +829,7 @@ export default function Results() {
   const handleDownloadPDF = () => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
+    let currentY = 0;
     
     // Header
     doc.setFillColor(64, 53, 82); // #403552
@@ -850,7 +847,7 @@ export default function Results() {
     
     doc.setFontSize(11);
     doc.setFont("helvetica", "normal");
-    autoTable(doc, {
+    const childInfoTable = autoTable(doc, {
       startY: 60,
       head: [["Field", "Value"]],
       body: [
@@ -865,19 +862,21 @@ export default function Results() {
       styles: { fontSize: 10 },
     });
     
+    currentY = (childInfoTable as any).previousAutoTable?.finalY || 80;
+    
     // Risk Assessment
     const riskColor = a.finalScore <= 30 ? [16, 185, 129] : a.finalScore <= 60 ? [245, 158, 11] : [239, 68, 68];
     doc.setFontSize(14);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(riskColor[0], riskColor[1], riskColor[2]);
-    doc.text(`Risk Level: ${riskCategory.label}`, 14, (doc as any).lastAutoTable.finalY + 15);
+    doc.text(`Risk Level: ${riskCategory.label}`, 14, currentY + 15);
     
     // Scores Table
     doc.setTextColor(64, 53, 82);
-    doc.text("Assessment Scores", 14, (doc as any).lastAutoTable.finalY + 30);
+    doc.text("Assessment Scores", 14, currentY + 30);
     
-    autoTable(doc, {
-      startY: (doc as any).lastAutoTable.finalY + 35,
+    const scoresTable = autoTable(doc, {
+      startY: currentY + 35,
       head: [["Metric", "Score", "Status"]],
       body: [
         ["Wasting Score", `${a.wastingScore}/100`, a.wastingScore <= 30 ? "Normal" : a.wastingScore <= 60 ? "Moderate" : "High"],
@@ -890,13 +889,15 @@ export default function Results() {
       styles: { fontSize: 10 },
     });
     
+    currentY = (scoresTable as any).previousAutoTable?.finalY || currentY + 70;
+    
     // WHO Indicators
     doc.setFontSize(14);
     doc.setFont("helvetica", "bold");
-    doc.text("WHO Growth Indicators", 14, (doc as any).lastAutoTable.finalY + 15);
+    doc.text("WHO Growth Indicators", 14, currentY + 15);
     
-    autoTable(doc, {
-      startY: (doc as any).lastAutoTable.finalY + 20,
+    const whoTable = autoTable(doc, {
+      startY: currentY + 20,
       head: [["Indicator", "Z-Score", "Status"]],
       body: [
         ["Weight-for-Age (WAZ)", (a.waz ?? a.whoZScore).toFixed(2), (a.underweightStatus ?? a.whoStatus).replace(/_/g, " ")],
@@ -909,15 +910,17 @@ export default function Results() {
       styles: { fontSize: 10 },
     });
     
+    currentY = (whoTable as any).previousAutoTable?.finalY || currentY + 70;
+    
     // Recommendations
     if (recommendations.length > 0) {
       doc.setFontSize(14);
       doc.setFont("helvetica", "bold");
-      doc.text("Recommendations", 14, (doc as any).lastAutoTable.finalY + 15);
+      doc.text("Recommendations", 14, currentY + 15);
       
       const recBody = recommendations.map((r) => [r.title, r.description]);
       autoTable(doc, {
-        startY: (doc as any).lastAutoTable.finalY + 20,
+        startY: currentY + 20,
         head: [["Recommendation", "Details"]],
         body: recBody,
         theme: "grid",
@@ -977,7 +980,7 @@ export default function Results() {
               aria-hidden="true"
             >
               <span className="flex items-center gap-1.5">
-                👤 <strong className="text-foreground">{childName}</strong>
+                {activeChild?.gender === "male" ? "👦" : activeChild?.gender === "female" ? "👧" : "👤"} <strong className="text-foreground">{childName}</strong>
               </span>
               <span className="flex items-center gap-1.5">
                 📅 <span>{assessmentDate}</span>

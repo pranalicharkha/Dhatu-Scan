@@ -7,7 +7,6 @@ import {
   Home,
   LogOut,
   Shield,
-  Star,
 } from "lucide-react";
 import { motion } from "motion/react";
 import { type ReactNode, useEffect, useState } from "react";
@@ -24,7 +23,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Home", icon: <Home size={20} /> },
   { href: "/screening", label: "Screening", icon: <ClipboardList size={20} /> },
   { href: "/results", label: "Results", icon: <Activity size={20} /> },
-  { href: "/rewards", label: "Rewards", icon: <Star size={20} /> },
+  { href: "/rewards", label: "Rewards", icon: <Shield size={20} /> },
   { href: "/privacy", label: "Privacy", icon: <Shield size={20} /> },
 ];
 
