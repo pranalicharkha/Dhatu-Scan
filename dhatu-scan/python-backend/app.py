@@ -191,14 +191,24 @@ class ChatResponse(BaseModel):
 
 
 TRAINING_DATASET_URL = "https://platform.who.int/nutrition/malnutrition-database/database-search"
-WHO_TABLES_PATH = (
-    Path(__file__).resolve().parent.parent
-    / "src"
-    / "frontend"
-    / "src"
-    / "data"
-    / "whoGrowthTables.json"
-)
+
+def _find_who_tables() -> Path:
+    """Search several possible locations for whoGrowthTables.json."""
+    candidates = [
+        Path(__file__).resolve().parent / "whoGrowthTables.json",
+        Path.cwd() / "whoGrowthTables.json",
+        Path("/app") / "whoGrowthTables.json",
+        Path(__file__).resolve().parent.parent
+        / "src" / "frontend" / "src" / "data" / "whoGrowthTables.json",
+    ]
+    for p in candidates:
+        if p.exists():
+            return p
+    raise FileNotFoundError(
+        f"whoGrowthTables.json not found. Searched: {[str(c) for c in candidates]}"
+    )
+
+WHO_TABLES_PATH = _find_who_tables()
 with WHO_TABLES_PATH.open("r", encoding="utf-8") as who_tables_file:
     WHO_TABLES = json.load(who_tables_file)
 
