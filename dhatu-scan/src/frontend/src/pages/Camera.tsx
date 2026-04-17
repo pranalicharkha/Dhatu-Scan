@@ -25,7 +25,7 @@ import {
 import { AnimatePresence, motion } from "motion/react";
 import { useTheme } from "next-themes";
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
-
+import { sendImageToBackend } from "../utils/api";
 // ── Guidance tips ─────────────────────────────────────────────────────────────
 const TIPS = [
   {
@@ -531,7 +531,7 @@ export default function Camera() {
   }, [cameraReady, capturePhase, inputMode]);
 
   // ── Capture handler ─────────────────────────────────────────────────────────
-  const handleCapture = useCallback(() => {
+  const handleCapture = useCallback(async() => {
     if (captureState !== "idle" || !canCapture) return;
     setSessionReady(false);
     setProcessedSession(null);
@@ -541,7 +541,7 @@ export default function Camera() {
 
     const start = Date.now();
     const duration = 1500;
-    const tick = () => {
+    const tick = async() => {
       const elapsed = Date.now() - start;
       const pct = Math.min((elapsed / duration) * 100, 100);
       setScanProgress(pct);
@@ -549,6 +549,11 @@ export default function Camera() {
         requestAnimationFrame(tick);
       } else {
         const image = captureFrame();
+        if (image) {
+  const response = await sendImageToBackend(image);
+  console.log(response);
+}
+        
         if (capturePhase === "face") {
           if (image) {
             setFaceCaptureDataUrl(image);
