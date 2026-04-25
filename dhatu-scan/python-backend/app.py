@@ -397,25 +397,12 @@ def _dietary_score(d: DietaryInput) -> float:
     return _clamp(100.0 - protective, 0.0, 100.0)
 
 
-def _fusion_score(wasting: float, dietary: float, hint: float | None) -> float:
-    visual = wasting if hint is None else _clamp(hint, 0.0, 100.0)
-    return _clamp(0.6 * wasting + 0.25 * dietary + 0.15 * visual, 0.0, 100.0)
-
-
 def _risk(score: float) -> RiskLevel:
     if score <= 30:
         return "low"
     if score <= 60:
         return "moderate"
     return "high"
-
-
-def _apply_who_risk_floor(score: float, who_z: float, who_status: WHOStatus) -> float:
-    if who_z <= -3.0 or who_status in {"severe_wasting", "severe_stunting", "severe_underweight"}:
-        return max(score, 61.0)
-    if who_z <= -2.0 or who_status in {"wasted", "stunted", "underweight"}:
-        return max(score, 31.0)
-    return score
 
 
 def _clinical_sign_review_items(image_assessment: ImageAssessment | None) -> list[str]:
@@ -554,6 +541,7 @@ from preprocess import (
 )
 from inference import analyze_visible_signs, extract_embedding
 from fusion import (
+    apply_who_risk_nudge,
     build_assessment_summary,
     calculate_fusion_score,
     risk_from_score,
@@ -823,26 +811,39 @@ def generate_assessment(payload: ApiAssessmentRequest, current_user: Parent = De
     masked_image_ref: MaskedImageReference | None = None
 
     if payload.maskedImage is not None:
-      if isinstance(payload.maskedImage, dict):
-        masked_image_ref = MaskedImageReference(**payload.maskedImage)
-      elif hasattr(payload.maskedImage, "path") or hasattr(payload.maskedImage, "dataUrl"):
-        masked_image_ref = MaskedImageReference.parse_obj(payload.maskedImage)
+        if isinstance(payload.maskedImage, dict):
+            masked_image_ref = MaskedImageReference(**payload.maskedImage)
+        elif hasattr(payload.maskedImage, "path") or hasattr(payload.maskedImage, "dataUrl"):
+            masked_image_ref = MaskedImageReference.parse_obj(payload.maskedImage)
 
-    if payload.capture.visibleSigns or payload.capture.qualityScore is not None:
+    # ── Image Assessment Resolution (priority order) ─────────────────────────
+    # 1. Use the pre-computed ImageAssessment sent back by the frontend after
+    #    /upload-image ran the real ML model on the actual image.  This is the
+    #    most accurate signal and must take priority.
+    if payload.capture.imageAssessment is not None:
+        image_assessment = payload.capture.imageAssessment
+
+    # 2. Fall back to heuristic-only assessment when no pre-computed result is
+    #    available (e.g., older frontend versions or live-camera flows without
+    #    an explicit upload step).
+    elif payload.capture.visibleSigns or payload.capture.qualityScore is not None:
         image_assessment = analyze_visible_signs(
             embedding_dim=576,
             quality_score=payload.capture.qualityScore or 70,
             face_masked=payload.capture.faceMasked,
             visible_signs=payload.capture.visibleSigns,
+            masked_bgr=None,  # no image bytes available at this stage
         )
 
-    fusion = calculate_fusion_score(
+    # ── Fusion: image is the primary driver (40-60% weight) ──────────────────
+    fusion_dict = calculate_fusion_score(
         wasting,
         dietary,
         image_assessment,
         payload.capture.embeddingRiskHint,
     )
-    fusion = _round2(_apply_who_risk_floor(fusion, who_z, who_status))
+    # Soft WHO nudge — does NOT hard-override image evidence
+    fusion = _round2(apply_who_risk_nudge(fusion_dict["fusionScore"], who_z, who_status))
     risk = risk_from_score(fusion)
 
     # Save Assessment to DB
@@ -892,8 +893,12 @@ def generate_assessment(payload: ApiAssessmentRequest, current_user: Parent = De
             whoStatus=who_status,
             wastingScore=wasting,
             dietaryScore=dietary,
+            imageScore=fusion_dict["imageScore"],
             fusionScore=fusion,
             riskLevel=risk,
+            imageWeight=fusion_dict["imageWeight"],
+            anthroWeight=fusion_dict["anthroWeight"],
+            dietWeight=fusion_dict["dietWeight"],
         ),
         summary=build_assessment_summary(who_status, risk, image_assessment),
         recommendations=_recommendations(risk, image_assessment),

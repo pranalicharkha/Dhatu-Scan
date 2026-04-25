@@ -754,16 +754,12 @@ export default function Camera() {
         setUploadBodyDetectedCount(bodyDetected);
         setUploadFaceDetectedCount(faceDetected);
 
-        if (faceDetected < 468 || bodyDetected < 33) {
+        // Only block if there are truly zero detections — partial landmarks
+        // are fine since the backend OpenCV pipeline analyzes the raw image.
+        if (faceDetected === 0 && bodyDetected === 0) {
           URL.revokeObjectURL(localUrl);
           setUploadConfirmMsg(
-            faceDetected === 0 && bodyDetected === 0
-              ? "No face or body landmarks were detected. Upload one clear image of a single child with the full face and full body visible."
-              : faceDetected < 468 && bodyDetected < 33
-                ? "Face and body landmarks are incomplete. Upload one clear image with the full face (468/468) and full body (33/33) visible."
-                : faceDetected < 468
-                  ? `Face landmarks are incomplete (${faceDetected}/468). Upload a clearer front-facing image with the full face visible.`
-                  : `Body landmarks are incomplete (${bodyDetected}/33). Upload a clearer full-body image with the whole child in frame.`,
+            "No face or body detected in this image. Please upload a clear photo of a single child with face and body visible."
           );
           return;
         }
@@ -788,6 +784,31 @@ export default function Camera() {
             { type: "image/jpeg" },
           ),
         });
+
+        // ── CRITICAL: persist the real ML image assessment from the backend ──
+        // This is the output of the trained MobileNetV3 + OpenCV clinical pipeline.
+        // We update the session so Form.tsx can forward it to /assessment, making
+        // the image the primary driver of the final risk decision.
+        if (result.imageAssessment) {
+          const updatedSession: typeof session = {
+            ...session,
+            imageAssessment: result.imageAssessment,
+            // Also update imageRiskScore from the real model's wasting probability
+            imageRiskScore:
+              typeof result.imageAssessment.visibleWastingProbability === "number"
+                ? Math.round(result.imageAssessment.visibleWastingProbability * 100)
+                : session.imageRiskScore,
+            qualityScore:
+              typeof result.imageAssessment.qualityScore === "number"
+                ? result.imageAssessment.qualityScore
+                : session.qualityScore,
+            visibleSigns: Array.isArray(result.imageAssessment.visibleSigns)
+              ? (result.imageAssessment.visibleSigns as string[])
+              : session.visibleSigns,
+          };
+          persistProcessedSession(updatedSession);
+        }
+
         setUploadConfirmMsg(result.message);
       } catch (error) {
         const message =

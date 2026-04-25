@@ -1004,7 +1004,7 @@ export default function Results() {
           <div className="grid grid-cols-3 gap-2" data-ocid="score-gauges">
             <ScoreGauge
               value={assessment.wastingScore}
-              label="Wasting Score"
+              label="Anthro Score"
               colorHex={wastingColor}
               delay={0.1}
             />
@@ -1021,7 +1021,7 @@ export default function Results() {
               delay={0.3}
             />
           </div>
-          <div className="mt-4 pt-4 border-t border-border/40">
+          <div className="mt-4 pt-4 border-border/40">
             <p className="text-[11px] text-muted-foreground text-center">
               FinalScore = 0.7 × WastingScore + 0.3 × DietaryRisk &nbsp;|&nbsp;
               <span className="text-primary">

@@ -1,5 +1,6 @@
 import type { Gender, WaterSourceType } from "@/types";
 import { API_BASE } from "@/lib/api";
+import { getCurrentUserToken } from "@/data/userRepository";
 
 type RiskLevel = "low" | "moderate" | "high";
 type WHOStatus =
@@ -33,6 +34,8 @@ export interface BackendAssessmentInput {
   embeddingRiskHint?: number;
   qualityScore?: number;
   visibleSigns?: string[];
+  // Pre-computed full ImageAssessment from /upload-image — the real ML result.
+  imageAssessment?: Record<string, unknown> | null;
 }
 
 export interface BackendAssessmentResult {
@@ -77,13 +80,17 @@ export interface UploadedImageResult {
   message: string;
   maskedImagePath?: string | null;
   embeddingDim: number;
+  // Full ML image assessment — must be saved to session and forwarded to /assessment.
+  imageAssessment?: Record<string, unknown> | null;
 }
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = await getCurrentUserToken();
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(init?.headers ?? {}),
     },
   });
@@ -114,8 +121,12 @@ interface PythonAssessmentResponse {
       whoStatus: WHOStatus;
       wastingScore: number;
       dietaryScore: number;
+      imageScore: number;
       fusionScore: number;
       riskLevel: RiskLevel;
+      imageWeight: number;
+      anthroWeight: number;
+      dietWeight: number;
     };
   };
 }
@@ -152,6 +163,9 @@ export async function submitAssessmentToBackend(
         embeddingRiskHint: input.embeddingRiskHint ?? null,
         qualityScore: input.qualityScore ?? null,
         visibleSigns: input.visibleSigns ?? [],
+        // Forward the pre-computed ML image assessment so the backend uses it
+        // as the primary signal instead of running a blind heuristic.
+        imageAssessment: input.imageAssessment ?? null,
       },
       originalImage: null,
       maskedImage: null,
@@ -199,9 +213,11 @@ export async function uploadImageToBackend(params: {
   formData.append("phase", params.phase);
   formData.append("image", params.file);
 
+  const token = await getCurrentUserToken();
   const response = await fetch(`${API_BASE}/upload-image`, {
     method: "POST",
     body: formData,
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
   if (!response.ok) {
     const body = await response.text();

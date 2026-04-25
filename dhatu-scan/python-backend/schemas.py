@@ -83,6 +83,9 @@ class CaptureMeta(BaseModel):
     embeddingRiskHint: float | None = None
     qualityScore: int | None = None
     visibleSigns: list[str] = Field(default_factory=list)
+    # Pre-computed image assessment returned by /upload-image — passed back by
+    # the frontend so the real ML model output drives the final decision.
+    imageAssessment: "ImageAssessment | None" = None
 
 
 class ImageAssessment(BaseModel):
@@ -110,8 +113,13 @@ class ScoreBreakdown(BaseModel):
     whoStatus: WHOStatus
     wastingScore: float
     dietaryScore: float
+    imageScore: float = 0.0          # 0-100 numerical image risk score
     fusionScore: float
     riskLevel: RiskLevel
+    # Applied fusion weights (sum to 1.0)
+    imageWeight: float = 0.0
+    anthroWeight: float = 0.70
+    dietWeight: float = 0.30
 
 
 class Report(BaseModel):

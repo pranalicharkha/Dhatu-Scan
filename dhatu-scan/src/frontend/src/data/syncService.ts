@@ -3,10 +3,9 @@ import { markChildSynced } from "./childRepository";
 import { markAssessmentSynced } from "./assessmentRepository";
 import { markGamificationSynced } from "./gamificationRepository";
 import { getCurrentUserToken } from "./userRepository";
+import { API_BASE } from "@/lib/api";
 import type { SyncQueueItem, SyncEntityType } from "./db";
 import type { LocalChildProfile, LocalAssessment, LocalGamificationState } from "./db";
-
-const API_BASE = "http://127.0.0.1:8000";
 
 let isSyncing = false;
 

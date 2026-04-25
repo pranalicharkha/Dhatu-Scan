@@ -11,6 +11,8 @@ export interface CameraAnalysisSession {
   imageRiskScore: number;
   qualityScore: number;
   visibleSigns: string[];
+  // Full image assessment returned by /upload-image — carries the real ML output.
+  imageAssessment?: Record<string, unknown> | null;
 }
 
 const STORAGE_KEY = "dhatu_camera_analysis_session";

@@ -248,6 +248,9 @@ export default function Form() {
             embeddingRiskHint: cameraSession.imageRiskScore,
             qualityScore: cameraSession.qualityScore,
             visibleSigns: cameraSession.visibleSigns,
+            // Forward the full ML image assessment from /upload-image so the
+            // backend uses the real trained model output as its primary signal.
+            imageAssessment: cameraSession.imageAssessment ?? null,
           });
 
           wastingScore = backendResult.scores.wastingScore;
@@ -256,6 +259,14 @@ export default function Form() {
           riskLevel = backendResult.scores.riskLevel;
           whoZScore = backendResult.scores.whoZScore;
           whoStatus = backendResult.scores.whoStatus;
+          // Extract the new image score and weights
+          const imageScore = backendResult.scores.imageScore;
+          const imageWeight = backendResult.scores.imageWeight;
+          const anthroWeight = backendResult.scores.anthroWeight;
+          const dietWeight = backendResult.scores.dietWeight;
+          // Store them in the cameraSession object temporarily so we can save them
+          cameraSession.imageRiskScore = imageScore;
+          Object.assign(cameraSession, { imageWeight, anthroWeight, dietWeight });
           usedBackend = true;
         } catch (error) {
           console.warn("Backend assessment failed; using local scoring fallback.", error);
@@ -334,6 +345,9 @@ export default function Form() {
         cameraConfidence: cameraSession.modelConfidence,
         imageRiskScore: cameraSession.imageRiskScore,
         imageQualityScore: cameraSession.qualityScore,
+        imageWeight: (cameraSession as any).imageWeight,
+        anthroWeight: (cameraSession as any).anthroWeight,
+        dietWeight: (cameraSession as any).dietWeight,
         imageModelName: cameraSession.modelName,
         imageVisibleSigns: cameraSession.visibleSigns,
         bodyLandmarksDetected: cameraSession.bodyLandmarksDetected,
