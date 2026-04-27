@@ -16,6 +16,13 @@ export interface ImagePipelineResult {
   imageRiskScore: number;
   qualityScore: number;
   visibleSigns: string[];
+  ribDetectionConfidence: number;
+  featureBreakdown?: {
+    ribs: number;
+    limbs: number;
+    eyes: number;
+    fat_loss: number;
+  };
 }
 
 declare global {
@@ -648,5 +655,22 @@ export async function preprocessAndAnalyzeImage(
     imageRiskScore,
     qualityScore,
     visibleSigns,
+    ribDetectionConfidence: Math.min(100, Math.round((visibleSigns.filter(sign => 
+      sign.toLowerCase().includes('rib') || sign.toLowerCase().includes('chest')
+    ).length / Math.max(1, visibleSigns.length)) * 100)),
+    featureBreakdown: {
+      ribs: Math.min(100, Math.round((visibleSigns.filter(sign => 
+        sign.toLowerCase().includes('rib') || sign.toLowerCase().includes('chest')
+      ).length / Math.max(1, visibleSigns.length)) * 100)),
+      limbs: Math.min(100, Math.round((visibleSigns.filter(sign => 
+        sign.toLowerCase().includes('limb') || sign.toLowerCase().includes('muscle')
+      ).length / Math.max(1, visibleSigns.length)) * 100)),
+      eyes: Math.min(100, Math.round((visibleSigns.filter(sign => 
+        sign.toLowerCase().includes('eye') || sign.toLowerCase().includes('socket')
+      ).length / Math.max(1, visibleSigns.length)) * 100)),
+      fat_loss: Math.min(100, Math.round((visibleSigns.filter(sign => 
+        sign.toLowerCase().includes('fat') || sign.toLowerCase().includes('thin')
+      ).length / Math.max(1, visibleSigns.length)) * 100)),
+    },
   };
 }

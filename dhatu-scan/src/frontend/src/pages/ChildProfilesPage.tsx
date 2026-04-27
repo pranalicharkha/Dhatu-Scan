@@ -3,6 +3,7 @@ import { useApp } from "@/context/AppContext";
 import { API_BASE } from "@/lib/api";
 import { getCurrentUserToken, getCurrentUserEmail } from "@/data/userRepository";
 import type { ChildProfile, Gender } from "@/types";
+import { createInitialGamificationState } from "@/utils/assessmentLogic";
 import { formatAgeFromMonths, calculateAgeInMonths } from "@/utils/childAge";
 import { Link } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "motion/react";
@@ -128,6 +129,7 @@ export default function ChildProfilesPage() {
       gender: form.gender,
       height: 0,
       weight: 0,
+      gamification: createInitialGamificationState(),
       createdAt: now,
       updatedAt: now,
     };

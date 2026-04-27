@@ -31,13 +31,6 @@ function formatRiskLabel(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
-function formatWhoLabel(value: string) {
-  return value
-    .split("_")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
 function formatCompactDate(value: string) {
   return new Date(value).toLocaleDateString(undefined, {
     month: "short",
@@ -45,49 +38,36 @@ function formatCompactDate(value: string) {
   });
 }
 
-function getMalnutritionChartColor(whoStatus: string) {
-  return whoStatus === "normal" ? "#16A34A" : "#DC2626";
+function getRiskChartColor(riskLevel: string) {
+  if (riskLevel === "high") return "#DC2626";
+  if (riskLevel === "moderate") return "#F59E0B";
+  return "#16A34A";
+}
+
+function getChangeDirection(current: number, previous: number) {
+  if (current > previous) return "up";
+  if (current < previous) return "down";
+  return "steady";
 }
 
 function getAssessmentPriorityScore(assessment: {
   riskLevel: string;
   finalScore: number;
   dietaryScore: number;
-  whoStatus: string;
 }) {
   const riskWeight =
     assessment.riskLevel === "high" ? 3 : assessment.riskLevel === "moderate" ? 2 : 1;
-  const whoPenalty = assessment.whoStatus === "normal" ? 0 : 20;
-  return riskWeight * 100 + whoPenalty + (100 - assessment.finalScore) + (100 - assessment.dietaryScore);
+  return riskWeight * 100 + assessment.finalScore + (100 - assessment.dietaryScore);
 }
 
-function getRiskCause(assessment: {
+function getHealthiestAssessmentScore(assessment: {
+  riskLevel: string;
+  finalScore: number;
   dietaryScore: number;
-  dietDiversity: number;
-  recentDiarrhea: number;
-  waterSource: number;
-  whoStatus: string;
-  imageVisibleSigns?: string[];
 }) {
-  const visibleSign = assessment.imageVisibleSigns?.[0];
-
-  if (assessment.dietaryScore < 45 || assessment.dietDiversity <= 3) {
-    return "Low diet diversity and weak nutrition intake are the strongest risk signals right now.";
-  }
-  if (assessment.recentDiarrhea < 5) {
-    return "Recent diarrhea history may be worsening nutrient absorption and increasing malnutrition risk.";
-  }
-  if (assessment.waterSource < 5) {
-    return "Unsafe water conditions may be affecting overall nutrition and recovery.";
-  }
-  if (assessment.whoStatus !== "normal") {
-    return `Growth screening is showing ${formatWhoLabel(assessment.whoStatus).toLowerCase()} markers that need close follow-up.`;
-  }
-  if (visibleSign) {
-    return `Visible screening signs suggest attention is needed around ${visibleSign.toLowerCase()}.`;
-  }
-
-  return "Current screening scores suggest this child should be reviewed again soon to prevent worsening risk.";
+  const stabilityBonus =
+    assessment.riskLevel === "low" ? 200 : assessment.riskLevel === "moderate" ? 80 : 0;
+  return stabilityBonus + (100 - assessment.finalScore) + assessment.dietaryScore;
 }
 
 function StatCard({
@@ -125,7 +105,9 @@ function StatCard({
       <p className="mt-3 font-display text-3xl font-bold" style={{ color: accent }}>
         {value}
       </p>
-      <p className="mt-2 text-sm" style={{ color: muted }}>{help}</p>
+      <p className="mt-2 text-sm" style={{ color: muted }}>
+        {help}
+      </p>
     </div>
   );
 }
@@ -154,15 +136,15 @@ function DashboardCard({
       }}
       onMouseEnter={
         onHover
-          ? (e) => {
-              e.currentTarget.style.boxShadow = CARD_HOVER;
+          ? (event) => {
+              event.currentTarget.style.boxShadow = CARD_HOVER;
             }
           : undefined
       }
       onMouseLeave={
         onHover
-          ? (e) => {
-              e.currentTarget.style.boxShadow = shadow;
+          ? (event) => {
+              event.currentTarget.style.boxShadow = shadow;
             }
           : undefined
       }
@@ -191,9 +173,8 @@ export default function DashboardHome() {
   const muted = isDark ? "#B8B2C9" : MUTED;
   const accent = isDark ? "#B39BFF" : ACCENT;
   const accentSoft = isDark ? "#73DDC7" : ACCENT_SOFT;
-  const cardShadow = isDark
-    ? "0 18px 38px rgba(0, 0, 0, 0.28)"
-    : CARD_SHADOW;
+  const cardShadow = isDark ? "0 18px 38px rgba(0, 0, 0, 0.28)" : CARD_SHADOW;
+
   const allAssessments = state.assessments;
   const highestRiskAssessment = [...allAssessments].sort(
     (a, b) => getAssessmentPriorityScore(b) - getAssessmentPriorityScore(a),
@@ -205,22 +186,13 @@ export default function DashboardHome() {
     highestRiskAssessment &&
     (highestRiskAssessment.riskLevel === "high" ||
       highestRiskAssessment.riskLevel === "moderate");
-  const healthiestAssessment = [...allAssessments].sort((a, b) => {
-    const aScore =
-      (a.riskLevel === "low" ? 200 : 0) +
-      (a.whoStatus === "normal" ? 100 : 0) +
-      a.finalScore +
-      a.dietaryScore;
-    const bScore =
-      (b.riskLevel === "low" ? 200 : 0) +
-      (b.whoStatus === "normal" ? 100 : 0) +
-      b.finalScore +
-      b.dietaryScore;
-    return bScore - aScore;
-  })[0];
+  const healthiestAssessment = [...allAssessments].sort(
+    (a, b) => getHealthiestAssessmentScore(b) - getHealthiestAssessmentScore(a),
+  )[0];
   const healthiestChild = healthiestAssessment
     ? state.children.find((child) => child.id === healthiestAssessment.childId)
     : null;
+
   const recentSummaryDate = latestOverallAssessment
     ? new Date(latestOverallAssessment.date).toLocaleDateString()
     : null;
@@ -229,19 +201,23 @@ export default function DashboardHome() {
   );
   const selectedChildLatestAssessment =
     selectedChildAssessments[selectedChildAssessments.length - 1] ?? null;
-  const chartColor = getMalnutritionChartColor(selectedChildLatestAssessment?.whoStatus ?? "");
-  const growthChartData = selectedChildAssessments.map((assessment) => ({
-    date: formatCompactDate(assessment.date),
-    zScore: assessment.haz ?? assessment.whoZScore,
-    score: clampPercent(assessment.finalScore),
-  }));
-  const zScoreTrend =
+  const previousSelectedAssessment =
     selectedChildAssessments.length >= 2
-      ? (selectedChildAssessments[selectedChildAssessments.length - 1].haz ??
-          selectedChildAssessments[selectedChildAssessments.length - 1].whoZScore) -
-        (selectedChildAssessments[selectedChildAssessments.length - 2].haz ??
-          selectedChildAssessments[selectedChildAssessments.length - 2].whoZScore)
-      : 0;
+      ? selectedChildAssessments[selectedChildAssessments.length - 2]
+      : null;
+  const latestMalnutritionDirection =
+    selectedChildLatestAssessment && previousSelectedAssessment
+      ? getChangeDirection(
+          selectedChildLatestAssessment.finalScore,
+          previousSelectedAssessment.finalScore,
+        )
+      : null;
+  const chartColor = getRiskChartColor(selectedChildLatestAssessment?.riskLevel ?? "");
+  const trendChartData = selectedChildAssessments.map((assessment) => ({
+    date: formatCompactDate(assessment.date),
+    malnutritionScore: clampPercent(assessment.finalScore),
+    riskLevel: assessment.riskLevel,
+  }));
 
   return (
     <div
@@ -266,11 +242,13 @@ export default function DashboardHome() {
             </p>
             <h1 className="mt-4 font-display text-4xl font-bold sm:text-5xl" style={{ color: text }}>
               Welcome to Dhatu-Scan
-              <span className="block" style={{ color: accent }}>monitor your child health.</span>
+              <span className="block" style={{ color: accent }}>
+                monitor your child health.
+              </span>
             </h1>
 
             <div className="mt-8">
-              {!activeChild || growthChartData.length === 0 ? (
+              {!activeChild || trendChartData.length === 0 ? (
                 <div
                   className="rounded-2xl p-5"
                   style={{
@@ -281,12 +259,12 @@ export default function DashboardHome() {
                   }}
                 >
                   <p className="text-xs uppercase tracking-[0.2em]" style={{ color: muted }}>
-                    Selected Child Growth
+                    Selected Child Progress
                   </p>
                   <p className="mt-4 text-base leading-7" style={{ color: text }}>
                     {activeChild
-                      ? "Complete at least one screening for the selected child to unlock a growth chart and trend view here."
-                      : "Select a child profile to see their growth history and dashboard insights."}
+                      ? "Complete at least one screening for the selected child to unlock the malnourishment trend here."
+                      : "Select a child profile to see their latest risk pattern and dashboard insights."}
                   </p>
                 </div>
               ) : (
@@ -300,12 +278,12 @@ export default function DashboardHome() {
                   }}
                 >
                   <p className="text-xs uppercase tracking-[0.2em]" style={{ color: muted }}>
-                    Selected Child Growth
+                    Selected Child Progress
                   </p>
                   <div className="mt-4 flex flex-col gap-4">
                     <div>
-                      <p className="font-display text-3xl font-bold" style={{ color: text }}>
-                        {activeChild.name}'s malnourishment progress.
+                      <p className="font-display text-4xl font-bold leading-tight" style={{ color: text }}>
+                        {activeChild.name}&apos;s malnourishment progress.
                       </p>
                       <div
                         className="mt-5 inline-flex rounded-2xl px-5 py-4"
@@ -313,16 +291,17 @@ export default function DashboardHome() {
                       >
                         <div>
                           <p className="text-xs uppercase tracking-[0.18em]" style={{ color: muted }}>
-                            Malnourishment Status
+                            Current Risk
                           </p>
-                          <p className="mt-2 text-3xl font-semibold" style={{ color: accentSoft }}>
+                          <p className="mt-2 text-3xl font-semibold" style={{ color: chartColor }}>
                             {selectedChildLatestAssessment
-                              ? formatWhoLabel(selectedChildLatestAssessment.whoStatus)
+                              ? formatRiskLabel(selectedChildLatestAssessment.riskLevel)
                               : "N/A"}
                           </p>
                         </div>
                       </div>
                     </div>
+
                     <div
                       className="rounded-2xl p-4"
                       style={{ background: surfaceSoft, border: `1px solid ${border}` }}
@@ -330,10 +309,15 @@ export default function DashboardHome() {
                       <div className="mb-4 flex items-center justify-between gap-3">
                         <div>
                           <p className="text-sm font-semibold" style={{ color: text }}>
-                            Malnutrition Progress
+                            Malnourishment Trend
                           </p>
-                          <p className="text-xs" style={{ color: muted }}>
-                            Latest risk: {selectedChildLatestAssessment ? formatRiskLabel(selectedChildLatestAssessment.riskLevel) : "N/A"}
+                          <p className="mt-1 text-sm" style={{ color: muted }}>
+                            {selectedChildLatestAssessment
+                              ? `Latest risk score: ${clampPercent(selectedChildLatestAssessment.finalScore)}%`
+                              : "N/A"}
+                            {latestMalnutritionDirection
+                              ? ` · Trend ${latestMalnutritionDirection}`
+                              : ""}
                           </p>
                         </div>
                         <div
@@ -349,9 +333,9 @@ export default function DashboardHome() {
                       </div>
                       <div className="h-64">
                         <ResponsiveContainer width="100%" height="100%">
-                          <AreaChart data={growthChartData} margin={{ top: 8, right: 4, left: -18, bottom: 0 }}>
+                          <AreaChart data={trendChartData} margin={{ top: 8, right: 4, left: -18, bottom: 0 }}>
                             <defs>
-                              <linearGradient id="growthWeightFill" x1="0" y1="0" x2="0" y2="1">
+                              <linearGradient id="malnutritionFill" x1="0" y1="0" x2="0" y2="1">
                                 <stop offset="5%" stopColor={chartColor} stopOpacity={0.45} />
                                 <stop offset="95%" stopColor={chartColor} stopOpacity={0.04} />
                               </linearGradient>
@@ -364,10 +348,13 @@ export default function DashboardHome() {
                               tickLine={false}
                             />
                             <YAxis
+                              domain={[0, 100]}
+                              ticks={[0, 25, 50, 75, 100]}
+                              tickFormatter={(value) => `${value}%`}
                               tick={{ fill: muted, fontSize: 11 }}
                               axisLine={false}
                               tickLine={false}
-                              width={36}
+                              width={52}
                             />
                             <Tooltip
                               contentStyle={{
@@ -377,14 +364,20 @@ export default function DashboardHome() {
                                 color: text,
                               }}
                               labelStyle={{ color: text, fontWeight: 600 }}
-                              formatter={(value) => [`${Number(value).toFixed(2)} z`, "WHO Z-Score"]}
+                              formatter={(value) => [`${clampPercent(Number(value))}%`, "Malnourishment"]}
+                              labelFormatter={(label, payload) => {
+                                const point = payload?.[0]?.payload as { riskLevel?: string } | undefined;
+                                return point?.riskLevel
+                                  ? `${label} - ${formatRiskLabel(point.riskLevel)}`
+                                  : String(label);
+                              }}
                             />
                             <Area
                               type="monotone"
-                              dataKey="zScore"
+                              dataKey="malnutritionScore"
                               stroke={chartColor}
                               strokeWidth={3}
-                              fill="url(#growthWeightFill)"
+                              fill="url(#malnutritionFill)"
                               activeDot={{ r: 5, fill: chartColor }}
                             />
                           </AreaChart>
@@ -436,7 +429,9 @@ export default function DashboardHome() {
                     className="rounded-xl p-3"
                     style={{ background: surfaceSoft, border: `1px solid ${border}` }}
                   >
-                    <p className="text-xs" style={{ color: muted }}>Reward Level</p>
+                    <p className="text-xs" style={{ color: muted }}>
+                      Reward Level
+                    </p>
                     <p className="mt-1 font-semibold" style={{ color: text }}>
                       {state.gamification.levelName}
                     </p>
@@ -445,7 +440,9 @@ export default function DashboardHome() {
                     className="rounded-xl p-3"
                     style={{ background: surfaceSoft, border: `1px solid ${border}` }}
                   >
-                    <p className="text-xs" style={{ color: muted }}>Total XP</p>
+                    <p className="text-xs" style={{ color: muted }}>
+                      Total XP
+                    </p>
                     <p className="mt-1 font-semibold" style={{ color: text }}>
                       {state.gamification.xp} XP
                     </p>
@@ -463,15 +460,16 @@ export default function DashboardHome() {
                   {mostAtRiskChild.name} needs attention first.
                 </p>
                 <p className="mt-3 text-sm leading-7" style={{ color: muted }}>
-                  {formatRiskLabel(highestRiskAssessment.riskLevel)} risk with{" "}
-                  {formatWhoLabel(highestRiskAssessment.whoStatus).toLowerCase()} growth markers.
+                  {formatRiskLabel(highestRiskAssessment.riskLevel)} risk on the latest screening.
                 </p>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
                   <div
                     className="rounded-xl p-4"
                     style={{ background: surfaceAlt, border: `1px solid ${border}` }}
                   >
-                    <p className="text-xs" style={{ color: muted }}>Growth Score</p>
+                    <p className="text-xs" style={{ color: muted }}>
+                      Latest Risk Score
+                    </p>
                     <p className="mt-2 text-2xl font-semibold" style={{ color: accent }}>
                       {clampPercent(highestRiskAssessment.finalScore)}%
                     </p>
@@ -480,22 +478,16 @@ export default function DashboardHome() {
                     className="rounded-xl p-4"
                     style={{ background: surfaceAlt, border: `1px solid ${border}` }}
                   >
-                    <p className="text-xs" style={{ color: muted }}>Main Cause</p>
+                    <p className="text-xs" style={{ color: muted }}>
+                      Last Screened
+                    </p>
                     <p className="mt-2 text-sm font-semibold leading-6" style={{ color: text }}>
-                      {highestRiskAssessment.dietaryScore < 45 || highestRiskAssessment.dietDiversity <= 3
-                        ? "Low diet diversity"
-                        : highestRiskAssessment.recentDiarrhea < 5
-                          ? "Recent diarrhea"
-                          : highestRiskAssessment.waterSource < 5
-                            ? "Unsafe water access"
-                            : highestRiskAssessment.whoStatus !== "normal"
-                              ? formatWhoLabel(highestRiskAssessment.whoStatus)
-                              : "Needs follow-up"}
+                      {new Date(highestRiskAssessment.date).toLocaleDateString()}
                     </p>
                   </div>
                 </div>
                 <p className="mt-4 text-sm leading-6" style={{ color: muted }}>
-                  {getRiskCause(highestRiskAssessment)}
+                  Follow up soon with a repeat screening or clinical review.
                 </p>
               </DashboardCard>
             ) : healthiestAssessment && healthiestChild ? (
@@ -504,18 +496,20 @@ export default function DashboardHome() {
                   Positive Child Update
                 </p>
                 <p className="mt-4 font-display text-2xl font-bold" style={{ color: text }}>
-                  {healthiestChild.name} is holding steady.
+                  {healthiestChild.name} is the most stable profile right now.
                 </p>
                 <p className="mt-3 text-sm leading-7" style={{ color: muted }}>
-                  The strongest recent outcome is showing low risk and stable growth for this child.
+                  The latest screening shows the most stable risk profile right now.
                 </p>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
                   <div
                     className="rounded-xl p-4"
                     style={{ background: surfaceAlt, border: `1px solid ${border}` }}
                   >
-                    <p className="text-xs" style={{ color: muted }}>Risk</p>
-                    <p className="mt-2 text-2xl font-semibold" style={{ color: accent }}>
+                    <p className="text-xs" style={{ color: muted }}>
+                      Current Risk
+                    </p>
+                    <p className="mt-2 text-2xl font-semibold" style={{ color: accentSoft }}>
                       {formatRiskLabel(healthiestAssessment.riskLevel)}
                     </p>
                   </div>
@@ -523,8 +517,10 @@ export default function DashboardHome() {
                     className="rounded-xl p-4"
                     style={{ background: surfaceAlt, border: `1px solid ${border}` }}
                   >
-                    <p className="text-xs" style={{ color: muted }}>Growth Score</p>
-                    <p className="mt-2 text-2xl font-semibold" style={{ color: accentSoft }}>
+                    <p className="text-xs" style={{ color: muted }}>
+                      Latest Score
+                    </p>
+                    <p className="mt-2 text-2xl font-semibold" style={{ color: text }}>
                       {clampPercent(healthiestAssessment.finalScore)}%
                     </p>
                   </div>
@@ -538,7 +534,7 @@ export default function DashboardHome() {
           <StatCard
             label="Screenings"
             value={String(state.assessments.length)}
-            help="Total completed checks in this device."
+            help="Total completed checks on this device."
             surface={surfaceAlt}
             border={border}
             shadow={cardShadow}
@@ -618,7 +614,7 @@ export default function DashboardHome() {
             >
               <p className="font-semibold" style={{ color: text }}>
                 {latestOverallAssessment && recentChild
-                  ? `${recentChild.name} was screened most recently with ${formatRiskLabel(latestOverallAssessment.riskLevel)} risk and ${formatWhoLabel(latestOverallAssessment.whoStatus)} status.`
+                  ? `${recentChild.name} was screened most recently with ${formatRiskLabel(latestOverallAssessment.riskLevel)} risk and a ${clampPercent(latestOverallAssessment.finalScore)}% score.`
                   : "There is no recent history to show."}
               </p>
               {latestOverallAssessment && recentChild ? (
@@ -627,7 +623,9 @@ export default function DashboardHome() {
                     className="rounded-xl p-3"
                     style={{ background: surfaceSoft, border: `1px solid ${border}` }}
                   >
-                    <p className="text-xs" style={{ color: muted }}>Child</p>
+                    <p className="text-xs" style={{ color: muted }}>
+                      Child
+                    </p>
                     <p className="mt-1 font-semibold" style={{ color: text }}>
                       {recentChild.name}
                     </p>
@@ -639,7 +637,9 @@ export default function DashboardHome() {
                     className="rounded-xl p-3"
                     style={{ background: surfaceSoft, border: `1px solid ${border}` }}
                   >
-                    <p className="text-xs" style={{ color: muted }}>Screened On</p>
+                    <p className="text-xs" style={{ color: muted }}>
+                      Screened On
+                    </p>
                     <p className="mt-1 font-semibold" style={{ color: text }}>
                       {recentSummaryDate}
                     </p>
@@ -651,12 +651,14 @@ export default function DashboardHome() {
                     className="rounded-xl p-3"
                     style={{ background: surfaceSoft, border: `1px solid ${border}` }}
                   >
-                    <p className="text-xs" style={{ color: muted }}>Risk Status</p>
+                    <p className="text-xs" style={{ color: muted }}>
+                      Risk Status
+                    </p>
                     <p className="mt-1 font-semibold" style={{ color: text }}>
                       {formatRiskLabel(latestOverallAssessment.riskLevel)}
                     </p>
                     <p className="mt-1 text-xs" style={{ color: muted }}>
-                      WHO status {formatWhoLabel(latestOverallAssessment.whoStatus)}
+                      Score {clampPercent(latestOverallAssessment.finalScore)}%
                     </p>
                   </div>
                 </div>

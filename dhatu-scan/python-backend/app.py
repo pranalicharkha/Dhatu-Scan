@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import json
 import math
 from datetime import datetime, timezone, timedelta
@@ -224,53 +223,6 @@ def _clamp(value: float, lower: float, upper: float) -> float:
 
 def _to_iso_now() -> str:
     return datetime.now(tz=timezone.utc).isoformat()
-
-
-def _decode_data_url_image(data_url: str) -> Any | None:
-    if cv2 is None or np is None or not data_url.startswith("data:"):
-        return None
-    try:
-        _, encoded = data_url.split(",", 1)
-        raw = base64.b64decode(encoded)
-    except (ValueError, TypeError, base64.binascii.Error):
-        return None
-    np_bytes = np.frombuffer(raw, dtype=np.uint8)
-    return cv2.imdecode(np_bytes, cv2.IMREAD_COLOR)
-
-
-def _load_masked_image_bgr(masked_image: Any | None) -> Any | None:
-    if cv2 is None or np is None or masked_image is None:
-        return None
-
-    image_path = getattr(masked_image, "path", None)
-    if image_path:
-        candidate = Path(image_path).expanduser()
-        if not candidate.is_absolute():
-            candidate = (_masked_dir / candidate).resolve()
-        else:
-            candidate = candidate.resolve()
-        try:
-            masked_root = _masked_dir.resolve()
-            candidate.relative_to(masked_root)
-        except ValueError:
-            candidate = None
-        if candidate is not None and candidate.exists():
-            loaded = cv2.imread(str(candidate))
-            if loaded is not None:
-                return loaded
-
-    data_url = getattr(masked_image, "dataUrl", None)
-    if data_url:
-        loaded = _decode_data_url_image(data_url)
-        if loaded is not None:
-            return loaded
-
-    image_bytes = getattr(masked_image, "bytes", None)
-    if image_bytes:
-        np_bytes = np.asarray(image_bytes, dtype=np.uint8)
-        return cv2.imdecode(np_bytes, cv2.IMREAD_COLOR)
-
-    return None
 
 
 def _normalize_gender(gender: Gender) -> str:
@@ -852,49 +804,29 @@ def delete_child(child_id: str, current_user: Parent = Depends(get_current_user)
 
 @app.post("/assessment", response_model=ApiAssessmentResponse)
 def generate_assessment(payload: ApiAssessmentRequest, current_user: Parent = Depends(get_current_user), db: Session = Depends(get_db)) -> ApiAssessmentResponse:
-    print(f"[ASSESSMENT] === NEW REQUEST ===")
-    print(f"[ASSESSMENT] maskedImage provided: {payload.maskedImage is not None}")
-    print(f"[ASSESSMENT] embeddingRiskHint: {payload.capture.embeddingRiskHint}")
-    
     who_z, who_status = _who_zscore(payload.anthropometry)
     wasting = _round2(_wasting_score(payload.anthropometry))
     dietary = _round2(_dietary_score(payload.dietary))
     image_assessment: ImageAssessment | None = None
     masked_image_ref: MaskedImageReference | None = None
-    masked_bgr = None
 
-    # Parse masked image reference.
     if payload.maskedImage is not None:
-        print("[ASSESSMENT] Processing maskedImage...")
         if isinstance(payload.maskedImage, dict):
             masked_image_ref = MaskedImageReference(**payload.maskedImage)
         elif hasattr(payload.maskedImage, "path") or hasattr(payload.maskedImage, "dataUrl"):
             masked_image_ref = MaskedImageReference.parse_obj(payload.maskedImage)
-        else:
-            masked_image_ref = payload.maskedImage
-        print(f"[ASSESSMENT] masked_image_ref created: {masked_image_ref is not None}")
-    else:
-        print("[ASSESSMENT] No maskedImage provided!")
 
-    if masked_image_ref is not None:
-        print("[ASSESSMENT] Loading masked image...")
-        masked_bgr = _load_masked_image_bgr(masked_image_ref)
-        print(f"[ASSESSMENT] masked_bgr loaded: {masked_bgr is not None}")
-
-    # Prefer the pre-computed ImageAssessment from /upload-image. If it is not
-    # available, analyze the masked image bytes, then fall back to metadata-only.
+    # ── Image Assessment Resolution (priority order) ─────────────────────────
+    # 1. Use the pre-computed ImageAssessment sent back by the frontend after
+    #    /upload-image ran the real ML model on the actual image.  This is the
+    #    most accurate signal and must take priority.
     if payload.capture.imageAssessment is not None:
         image_assessment = payload.capture.imageAssessment
-    elif masked_bgr is not None:
-        image_assessment = analyze_visible_signs(
-            embedding_dim=576,
-            quality_score=payload.capture.qualityScore or 70,
-            face_masked=payload.capture.faceMasked,
-            visible_signs=payload.capture.visibleSigns,
-            masked_bgr=masked_bgr,
-        )
+
+    # 2. Fall back to heuristic-only assessment when no pre-computed result is
+    #    available (e.g., older frontend versions or live-camera flows without
+    #    an explicit upload step).
     elif payload.capture.visibleSigns or payload.capture.qualityScore is not None:
-        # Fallback: use metadata-only assessment when image bytes are unavailable.
         image_assessment = analyze_visible_signs(
             embedding_dim=576,
             quality_score=payload.capture.qualityScore or 70,
@@ -904,14 +836,33 @@ def generate_assessment(payload: ApiAssessmentRequest, current_user: Parent = De
         )
 
     # ── Fusion: image is the primary driver (40-60% weight) ──────────────────
-    fusion_dict = calculate_fusion_score(
+    fusion_result = calculate_fusion_score(
         wasting,
         dietary,
         image_assessment,
         payload.capture.embeddingRiskHint,
     )
-    # Soft WHO nudge - does not hard-override image evidence.
-    fusion = _round2(apply_who_risk_nudge(fusion_dict["fusionScore"], who_z, who_status))
+    fusion_score = fusion_result["fusionScore"]
+
+    # Soft WHO nudge — does NOT hard-override image evidence
+    fusion_score = apply_who_risk_nudge(fusion_score, who_z, who_status)
+
+    # ── Image clinical signs override ────────────────────────────────────────
+    # When the ML model detects serious visible signs of malnutrition (sunken
+    # eyes, thin hair, visible ribs, etc.) the image signal must dominate even
+    # when anthropometric measurements appear normal — a child can look visibly
+    # malnourished while still having "normal" height/weight z-scores.
+    if image_assessment is not None:
+        image_risk = image_assessment.visibleWastingProbability * 100.0
+        num_signs = len(image_assessment.visibleSigns)
+        if num_signs >= 3 or image_risk >= 60:
+            # Strong image evidence — ensure fusion is at least as high
+            fusion_score = max(fusion_score, image_risk)
+        elif num_signs >= 1 or image_risk >= 30:
+            # Moderate image evidence — blend aggressively toward image
+            fusion_score = max(fusion_score, image_risk * 0.80)
+
+    fusion = _round2(fusion_score)
     risk = risk_from_score(fusion)
 
     # Save Assessment to DB
@@ -961,12 +912,12 @@ def generate_assessment(payload: ApiAssessmentRequest, current_user: Parent = De
             whoStatus=who_status,
             wastingScore=wasting,
             dietaryScore=dietary,
-            imageScore=fusion_dict["imageScore"],
+            imageScore=fusion_result.get("imageScore", 0.0),
             fusionScore=fusion,
             riskLevel=risk,
-            imageWeight=fusion_dict["imageWeight"],
-            anthroWeight=fusion_dict["anthroWeight"],
-            dietWeight=fusion_dict["dietWeight"],
+            imageWeight=fusion_result.get("imageWeight", 0.0),
+            anthroWeight=fusion_result.get("anthroWeight", 0.0),
+            dietWeight=fusion_result.get("dietWeight", 0.0),
         ),
         summary=build_assessment_summary(who_status, risk, image_assessment),
         recommendations=_recommendations(risk, image_assessment),

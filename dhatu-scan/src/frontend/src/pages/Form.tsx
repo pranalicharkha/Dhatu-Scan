@@ -365,6 +365,21 @@ export default function Form() {
         bodyLandmarksDetected: cameraSession.bodyLandmarksDetected,
         faceLandmarksDetected: cameraSession.faceLandmarksDetected,
         faceMasked: cameraSession.faceMasked,
+        // Extract clinical feature scores from the ML image assessment
+        featureScores: (() => {
+          const ia = cameraSession.imageAssessment as Record<string, unknown> | null | undefined;
+          const fs = ia?.featureScores as Record<string, number> | undefined;
+          if (!fs) return undefined;
+          return {
+            ribs: fs.ribs ?? 0,
+            limbs: fs.limbs ?? 0,
+            eyes: fs.eyes ?? 0,
+            fat_loss: fs.fat_loss ?? 0,
+            edema: fs.edema ?? 0,
+            skin: fs.skin ?? 0,
+            thinness: fs.thinness ?? 0,
+          };
+        })(),
         notes: form.medicalConditions || undefined,
       });
 

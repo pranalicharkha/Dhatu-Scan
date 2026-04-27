@@ -680,14 +680,14 @@ export default function Gamification() {
         </GlassCard>
 
         {/* ── Community Leaderboard Teaser ───────────────────────────── */}
-        <GlassCard variant="subtle" animate delay={0.3} className="p-5">
+        <GlassCard variant="subtle" animate delay={0.3} className="hidden">
           <div className="flex items-center gap-3 mb-3">
             <div className="w-10 h-10 rounded-xl bg-secondary/20 border border-secondary/30 flex items-center justify-center">
               
             </div>
             <div>
               <h3 className="text-sm font-bold text-foreground">
-                Community Rank
+                Removed Community Rank
               </h3>
               <p className="text-xs text-muted-foreground">
                 Your regional standing

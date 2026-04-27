@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { useApp } from "@/context/AppContext";
 import type { Assessment, RiskLevel, WHOStatus } from "@/types/index";
 import {
+  getRiskCategory,
   getRiskCategoryByLevel,
   getRiskLevelColor,
   getWHOStatusColor,
@@ -43,6 +44,50 @@ const WATER_SOURCE_COPY: Record<number, string> = {
   0: "Unprotected water source",
 };
 
+type ClinicalFeatureKey = keyof NonNullable<Assessment["featureScores"]>;
+
+const CLINICAL_SIGN_COPY: Array<{
+  key: ClinicalFeatureKey;
+  title: string;
+  desc: string;
+}> = [
+  {
+    key: "ribs",
+    title: "Visible Ribs",
+    desc: "Rib cage is visible through skin, indicating severe loss of body fat and muscle.",
+  },
+  {
+    key: "limbs",
+    title: "Wasted Limbs",
+    desc: "Arms and legs appear visibly thin with muscle wasting, consistent with undernutrition.",
+  },
+  {
+    key: "eyes",
+    title: "Sunken Eyes",
+    desc: "Under-eye hollowing or sunken orbital sockets detected, a sign of dehydration or wasting.",
+  },
+  {
+    key: "fat_loss",
+    title: "Facial Fat / Hair Changes",
+    desc: "Loss of facial fullness or sparse hair texture detected, consistent with protein-energy deficiency.",
+  },
+  {
+    key: "edema",
+    title: "Edema (Swelling)",
+    desc: "Bilateral swelling patterns detected, a hallmark of kwashiorkor-type malnutrition.",
+  },
+  {
+    key: "skin",
+    title: "Skin Color / Texture Changes",
+    desc: "Skin pallor, yellowish tinge, or abnormal dry and patchy texture was detected.",
+  },
+  {
+    key: "thinness",
+    title: "Overall Thinness",
+    desc: "Generalized body thinness pattern detected, suggesting reduced fat and muscle stores.",
+  },
+];
+
 function formatStatus(status: WHOStatus) {
   return status.replace(/_/g, " ");
 }
@@ -66,6 +111,50 @@ function getQualityLabel(score: number) {
   if (score >= 80) return "Good";
   if (score >= 60) return "Fair";
   return "Needs recapture";
+}
+
+function compactClinicalSignLabel(sign: string) {
+  const normalized = sign.toLowerCase().replace(/\s+/g, " ").trim();
+
+  const mappedLabels: Array<[RegExp, string]> = [
+    [/severely thin upper arm|thin upper arm proportions|low muac/, "Thin upper arm"],
+    [/abdominal distension/, "Abdominal distension"],
+    [/bilateral lower limb puffiness|limb swelling|unilateral edema/, "Limb swelling"],
+    [/severely reduced body mass|body appears thin|extreme thinness|moderate wasting/, "Body thinness"],
+    [/lower limb width|muscle wasting in thighs|muscle wasting in calves/, "Thin lower limbs"],
+    [/chest structure|rib prominence|visible ribs?/, "Rib prominence"],
+    [/clavicle|collarbone|shoulder bone prominence/, "Prominent collarbone"],
+    [/skin pallor/, "Skin pallor"],
+    [/uneven skin pigmentation|flaky paint|patchy discoloration/, "Skin pigmentation changes"],
+    [/yellowish skin tinge|jaundice/, "Yellowish skin tinge"],
+    [/skin texture roughness|dry skin|flaky skin/, "Dry or flaky skin"],
+    [/low hair density|thin hair|sparse, thin hair|sparse hair/, "Thin or sparse hair"],
+    [/reddish or light hair discoloration|flag sign/, "Hair discoloration"],
+    [/hair depigmentation/, "Hair depigmentation"],
+    [/sunken eye sockets|periorbital hollowing/, "Sunken eyes"],
+    [/moon face|facial edema|rounded facial profile/, "Facial swelling"],
+  ];
+
+  for (const [pattern, label] of mappedLabels) {
+    if (pattern.test(normalized)) {
+      return label;
+    }
+  }
+
+  const compact = sign
+    .split(/[—–-]/)[0]
+    .split(".")[0]
+    .replace(/\([^)]*\)/g, "")
+    .replace(/\bdetected\b/gi, "")
+    .replace(/\bpossible\b/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!compact) {
+    return "Detected clinical sign";
+  }
+
+  return compact.charAt(0).toUpperCase() + compact.slice(1);
 }
 
 function AnalysisMetric({
@@ -806,133 +895,187 @@ export default function Results() {
         ? "#f59e0b"
         : "#ef4444";
   const imageRisk = a.imageRiskScore ?? 0;
+  const diagnosisScore = Number.isFinite(a.finalScore) ? a.finalScore : imageRisk;
   const imageQuality = a.imageQualityScore ?? 0;
   const imageRiskMeta = getImageRiskLabel(imageRisk);
-  const visibleSigns = (a.imageVisibleSigns ?? []).filter(
-    (sign) =>
-      ![
-        "Face capture quality validated",
-        "Face anonymization applied",
-        "Full-body framing processed",
-        "Incidental face anonymized",
-        "Uploaded image processed",
-        "Feature embedding extracted",
-      ].includes(sign),
+  const visibleSigns = Array.from(
+    new Set(
+      (a.imageVisibleSigns ?? [])
+        .filter(
+          (sign) =>
+            ![
+              "Face capture quality validated",
+              "Face anonymization applied",
+              "Full-body framing processed",
+              "Incidental face anonymized",
+              "Uploaded image processed",
+              "Feature embedding extracted",
+            ].includes(sign),
+        )
+        .map((sign) => sign.trim())
+        .filter(Boolean),
+    ),
   );
+  const scoredClinicalSigns = a.featureScores
+    ? CLINICAL_SIGN_COPY.map((item) => ({
+        ...item,
+        score: a.featureScores?.[item.key] ?? 0,
+      })).filter((item) => item.score > 0.15)
+    : [];
+  const hasRibSignal =
+    (a.featureScores?.ribs ?? 0) > 0.15 ||
+    visibleSigns.some((sign) => /rib|chest structure|rib prominence/i.test(sign));
+  const hasEdemaSignal =
+    (a.featureScores?.edema ?? 0) > 0.15 ||
+    visibleSigns.some((sign) => /edema|swelling|puffiness|moon face|distension/i.test(sign));
+  const adjustedDiagnosisScore =
+    hasRibSignal || hasEdemaSignal
+      ? Math.max(diagnosisScore, 31)
+      : diagnosisScore;
+  const adjustedDiagnosisRisk = getRiskCategory(adjustedDiagnosisScore);
+  const diagnosisRiskColor = getRiskLevelColor(adjustedDiagnosisRisk.level);
+  const compactVisibleSigns = Array.from(
+    new Set(
+      visibleSigns
+        .map(compactClinicalSignLabel)
+        .filter(Boolean),
+    ),
+  ).filter(
+    (sign) =>
+      !scoredClinicalSigns.some(
+        (item) => item.title.toLowerCase() === sign.toLowerCase(),
+      ),
+  );
+  const hasClinicalSigns =
+    scoredClinicalSigns.length > 0 || compactVisibleSigns.length > 0;
 
   const handleDownloadPDF = () => {
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
-    let currentY = 0;
-    
-    // Header
-    doc.setFillColor(64, 53, 82); // #403552
-    doc.rect(0, 0, pageWidth, 40, "F");
-    doc.setTextColor(255, 250, 245); // #fffaf5
-    doc.setFontSize(22);
-    doc.setFont("helvetica", "bold");
-    doc.text("DhatuScan Assessment Report", pageWidth / 2, 25, { align: "center" });
-    
-    // Child Info Section
-    doc.setTextColor(64, 53, 82);
-    doc.setFontSize(14);
-    doc.setFont("helvetica", "bold");
-    doc.text("Child Information", 14, 55);
-    
-    doc.setFontSize(11);
-    doc.setFont("helvetica", "normal");
-    const childInfoTable = autoTable(doc, {
-      startY: 60,
-      head: [["Field", "Value"]],
-      body: [
-        ["Child Name", childName],
-        ["Assessment Date", assessmentDate],
-        ["Age (Months)", a.age.toString()],
-        ["Height (cm)", a.height.toString()],
-        ["Weight (kg)", a.weight.toString()],
-      ],
-      theme: "grid",
-      headStyles: { fillColor: [156, 143, 203], textColor: 255 },
-      styles: { fontSize: 10 },
-    });
-    
-    currentY = (childInfoTable as any).previousAutoTable?.finalY || 80;
-    
-    // Risk Assessment
-    const riskColor = a.finalScore <= 30 ? [16, 185, 129] : a.finalScore <= 60 ? [245, 158, 11] : [239, 68, 68];
-    doc.setFontSize(14);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(riskColor[0], riskColor[1], riskColor[2]);
-    doc.text(`Risk Level: ${riskCategory.label}`, 14, currentY + 15);
-    
-    // Scores Table
-    doc.setTextColor(64, 53, 82);
-    doc.text("Assessment Scores", 14, currentY + 30);
-    
-    const scoresTable = autoTable(doc, {
-      startY: currentY + 35,
-      head: [["Metric", "Score", "Status"]],
-      body: [
-        ["Wasting Score", `${a.wastingScore}/100`, a.wastingScore <= 30 ? "Normal" : a.wastingScore <= 60 ? "Moderate" : "High"],
-        ["Dietary Score", `${a.dietaryScore}/100`, a.dietaryScore <= 30 ? "Good" : a.dietaryScore <= 60 ? "Fair" : "Poor"],
-        ["Final Score", `${a.finalScore}/100`, riskCategory.label],
-        ["WHO Z-Score", a.whoZScore.toFixed(2), a.whoStatus.replace(/_/g, " ")],
-      ],
-      theme: "grid",
-      headStyles: { fillColor: [156, 143, 203], textColor: 255 },
-      styles: { fontSize: 10 },
-    });
-    
-    currentY = (scoresTable as any).previousAutoTable?.finalY || currentY + 70;
-    
-    // WHO Indicators
-    doc.setFontSize(14);
-    doc.setFont("helvetica", "bold");
-    doc.text("WHO Growth Indicators", 14, currentY + 15);
-    
-    const whoTable = autoTable(doc, {
-      startY: currentY + 20,
-      head: [["Indicator", "Z-Score", "Status"]],
-      body: [
-        ["Weight-for-Age (WAZ)", (a.waz ?? a.whoZScore).toFixed(2), (a.underweightStatus ?? a.whoStatus).replace(/_/g, " ")],
-        ["Height-for-Age (HAZ)", (a.haz ?? a.whoZScore).toFixed(2), (a.stuntingStatus ?? a.whoStatus).replace(/_/g, " ")],
-        ["Weight-for-Height (WHZ)", (a.whz ?? a.whoZScore).toFixed(2), (a.wastingStatus ?? a.whoStatus).replace(/_/g, " ")],
-        ["BMI-for-Age (BAZ)", (a.baz ?? Number((a.weight / (a.height / 100) ** 2).toFixed(2))).toFixed(2), a.whoStatus.replace(/_/g, " ")],
-      ],
-      theme: "grid",
-      headStyles: { fillColor: [156, 143, 203], textColor: 255 },
-      styles: { fontSize: 10 },
-    });
-    
-    currentY = (whoTable as any).previousAutoTable?.finalY || currentY + 70;
-    
-    // Recommendations
-    if (recommendations.length > 0) {
+    try {
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      let currentY = 0;
+      
+      // Header
+      doc.setFillColor(64, 53, 82); // #403552
+      doc.rect(0, 0, pageWidth, 40, "F");
+      doc.setTextColor(255, 250, 245); // #fffaf5
+      doc.setFontSize(22);
+      doc.setFont("helvetica", "bold");
+      doc.text("DhatuScan Assessment Report", pageWidth / 2, 25, { align: "center" });
+      
+      // Child Info Section
+      doc.setTextColor(64, 53, 82);
       doc.setFontSize(14);
       doc.setFont("helvetica", "bold");
-      doc.text("Recommendations", 14, currentY + 15);
+      doc.text("Child Information", 14, 55);
       
-      const recBody = recommendations.map((r) => [r.title, r.description]);
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "normal");
       autoTable(doc, {
-        startY: currentY + 20,
-        head: [["Recommendation", "Details"]],
-        body: recBody,
+        startY: 60,
+        head: [["Field", "Value"]],
+        body: [
+          ["Child Name", childName],
+          ["Assessment Date", assessmentDate],
+          ["Age (Months)", a.age.toString()],
+          ["Height (cm)", a.height.toString()],
+          ["Weight (kg)", a.weight.toString()],
+        ],
         theme: "grid",
         headStyles: { fillColor: [156, 143, 203], textColor: 255 },
-        styles: { fontSize: 9 },
+        styles: { fontSize: 10 },
       });
+      
+      currentY = (doc as any).lastAutoTable?.finalY || 80;
+      
+      // Risk Assessment
+      const riskColor = a.finalScore <= 30 ? [16, 185, 129] : a.finalScore <= 60 ? [245, 158, 11] : [239, 68, 68];
+      doc.setFontSize(14);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(riskColor[0], riskColor[1], riskColor[2]);
+      doc.text(`Risk Level: ${riskCategory.label} (${a.finalScore}/100)`, 14, currentY + 15);
+      
+      currentY = currentY + 25;
+      
+      // WHO Indicators
+      doc.setFontSize(14);
+      doc.setFont("helvetica", "bold");
+      doc.text("WHO Growth Indicators", 14, currentY + 15);
+      
+      autoTable(doc, {
+        startY: currentY + 20,
+        head: [["Indicator", "Z-Score", "Status"]],
+        body: [
+          ["Weight-for-Age (WAZ)", (a.waz ?? a.whoZScore).toFixed(2), (a.underweightStatus ?? a.whoStatus).replace(/_/g, " ")],
+          ["Height-for-Age (HAZ)", (a.haz ?? a.whoZScore).toFixed(2), (a.stuntingStatus ?? a.whoStatus).replace(/_/g, " ")],
+          ["Weight-for-Height (WHZ)", (a.whz ?? a.whoZScore).toFixed(2), (a.wastingStatus ?? a.whoStatus).replace(/_/g, " ")],
+          ["BMI-for-Age (BAZ)", (a.baz ?? Number((a.weight / (a.height / 100) ** 2).toFixed(2))).toFixed(2), a.whoStatus.replace(/_/g, " ")],
+        ],
+        theme: "grid",
+        headStyles: { fillColor: [156, 143, 203], textColor: 255 },
+        styles: { fontSize: 10 },
+      });
+      
+      currentY = (doc as any).lastAutoTable?.finalY || currentY + 70;
+      
+      // Recommendations
+      if (recommendations.length > 0) {
+        doc.setFontSize(14);
+        doc.setFont("helvetica", "bold");
+        doc.text("Recommendations", 14, currentY + 15);
+        
+        const recBody = recommendations.map((r) => [r.title, r.description]);
+        autoTable(doc, {
+          startY: currentY + 20,
+          head: [["Recommendation", "Details"]],
+          body: recBody,
+          theme: "grid",
+          headStyles: { fillColor: [156, 143, 203], textColor: 255 },
+          styles: { fontSize: 9 },
+        });
+      }
+      
+      // Footer
+      const footerY = doc.internal.pageSize.getHeight() - 20;
+      doc.setFontSize(9);
+      doc.setTextColor(128, 128, 128);
+      doc.setFont("helvetica", "normal");
+      doc.text(`Generated by DhatuScan on ${new Date().toLocaleString()}`, pageWidth / 2, footerY, { align: "center" });
+      doc.text("Confidential Health Report - Keep Secure", pageWidth / 2, footerY + 5, { align: "center" });
+      
+      // Save
+      doc.save(`DhatuScan_Report_${childName.replace(/\s/g, "_")}_${new Date().toISOString().split("T")[0]}.pdf`);
+    } catch (error) {
+      console.error("Error generating PDF:", error);
+      // Fallback: create a simple text download
+      const reportContent = `
+DhatuScan Assessment Report
+============================
+Child Name: ${childName}
+Assessment Date: ${assessmentDate}
+Age: ${assessment.age} months
+Height: ${assessment.height} cm
+Weight: ${assessment.weight} kg
+
+Risk Level: ${riskCategory.label}
+Final Score: ${assessment.finalScore}/100
+WHO Z-Score: ${assessment.whoZScore.toFixed(2)}
+
+${recommendations.map(r => `- ${r.title}: ${r.description}`).join('\n')}
+
+Generated on: ${new Date().toLocaleString()}
+      `.trim();
+      
+      const blob = new Blob([reportContent], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `DhatuScan_Report_${childName.replace(/\s/g, "_")}_${new Date().toISOString().split("T")[0]}.txt`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
     }
-    
-    // Footer
-    const footerY = doc.internal.pageSize.getHeight() - 20;
-    doc.setFontSize(9);
-    doc.setTextColor(128, 128, 128);
-    doc.setFont("helvetica", "normal");
-    doc.text(`Generated by DhatuScan on ${new Date().toLocaleString()}`, pageWidth / 2, footerY, { align: "center" });
-    doc.text("Confidential Health Report - Keep Secure", pageWidth / 2, footerY + 5, { align: "center" });
-    
-    // Save
-    doc.save(`DhatuScan_Report_${childName.replace(/\s/g, "_")}_${new Date().toISOString().split("T")[0]}.pdf`);
   };
 
   return (
@@ -1424,63 +1567,154 @@ export default function Results() {
         </GlassCard>
 
         <div className="grid gap-4 lg:grid-cols-2">
+          {/* ── Global Diagnosis (MobileNetV3) ── */}
           <GlassCard animate delay={0.18} variant="elevated" className="p-6">
-            <div className="flex items-start justify-between gap-3 flex-wrap">
-              <div>
-                <h2 className="font-display font-semibold text-foreground">
-                  Image Analysis
-                </h2>
-                <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                  Landmark detection and visible findings from the submitted image.
-                </p>
-              </div>
-              <Badge variant="outline" className="text-[10px] px-2 py-0.5 border font-medium">
-                Image review
-              </Badge>
-            </div>
-            <div className="mt-5 rounded-2xl border border-border/50 bg-background/30 p-4">
-              <ReportRow
-                label="Landmarks"
-                value={`${a.faceLandmarksDetected ?? 0}/468 face, ${a.bodyLandmarksDetected ?? 0}/33 body`}
-              />
-              <ReportRow
-                label="Face Masking"
-                value={a.faceMasked ? "Applied" : "Not confirmed"}
-              />
+            <h2 className="font-display text-base font-bold text-foreground tracking-tight">
+              Global Diagnosis
+            </h2>
 
-            </div>
-            <div className="mt-4 rounded-2xl border border-border/50 bg-background/30 p-4">
-              <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                Clinical Signs In Image Analysis
+            {/* Confidence ring + overall label */}
+            <div className="mt-5 flex items-center gap-5">
+              <div className="relative flex-shrink-0">
+                <svg width="72" height="72" viewBox="0 0 72 72">
+                  <circle cx="36" cy="36" r="30" fill="none" stroke="currentColor" strokeWidth="5" className="text-white/8" />
+                  <circle
+                    cx="36" cy="36" r="30" fill="none"
+                    strokeWidth="5"
+                    strokeLinecap="round"
+                    strokeDasharray={`${(adjustedDiagnosisScore / 100) * 188.5} 188.5`}
+                    transform="rotate(-90 36 36)"
+                    style={{ stroke: diagnosisRiskColor }}
+                  />
+                </svg>
+                <span className="absolute inset-0 flex items-center justify-center text-sm font-bold text-foreground">
+                  {Math.round(adjustedDiagnosisScore)}%
+                </span>
               </div>
-              {visibleSigns.length > 0 ? (
-                <ul className="mt-3 space-y-2 text-sm text-foreground/90">
-                  {visibleSigns.map((sign) => (
-                    <li key={sign}>- {sign}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="mt-3 text-sm text-muted-foreground">
-                  No visible clinical signs were detected by the model in this image.
-                </p>
-              )}
+              <div>
+                <div className="text-lg font-extrabold tracking-tight" style={{ color: diagnosisRiskColor }}>
+                  {adjustedDiagnosisRisk.level === "high"
+                    ? "MALNOURISHED"
+                    : adjustedDiagnosisRisk.level === "moderate"
+                      ? "AT RISK"
+                      : "NORMAL"}
+                </div>
+                <div className="text-xs text-muted-foreground mt-0.5">Malnourishment Score</div>
+              </div>
+            </div>
+
+            {/* Face / Body breakdown */}
+            <div className="mt-5 space-y-2">
+              {(() => {
+                const fs = a.featureScores;
+                // Face combines sunken eyes, facial fat loss, and skin pallor
+                const faceScore = fs ? (fs.eyes + fs.fat_loss + (fs.skin * 0.5)) / 2.5 : 0;
+                // Body combines ribs, limbs wasting, edema, overall thinness, and skin changes
+                const baseBodyScore = fs ? (fs.ribs + fs.limbs + fs.edema + fs.thinness + fs.skin) / 5 : 0;
+                const bodyScore =
+                  hasRibSignal || hasEdemaSignal
+                    ? Math.max(baseBodyScore, 0.31)
+                    : baseBodyScore;
+                
+                const getLabel = (s: number) => s > 0.5 ? "MALNOURISHED" : s > 0.3 ? "AT RISK" : "NORMAL";
+                const getColor = (s: number) => s > 0.5 ? "bg-red-500/15 text-red-400 border-red-500/30" : s > 0.3 ? "bg-amber-500/15 text-amber-400 border-amber-500/30" : "bg-emerald-500/15 text-emerald-400 border-emerald-500/30";
+                return (
+                  <>
+                    <div className="flex items-center justify-between rounded-xl border border-border/40 bg-background/25 px-4 py-2.5">
+                      <span className="text-sm font-medium text-foreground/90">Face</span>
+                      <span className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${getColor(faceScore)}`}>
+                        {getLabel(faceScore)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between rounded-xl border border-border/40 bg-background/25 px-4 py-2.5">
+                      <span className="text-sm font-medium text-foreground/90">Body</span>
+                      <span className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${getColor(bodyScore)}`}>
+                        {getLabel(bodyScore)}
+                      </span>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           </GlassCard>
 
+          {/* ── Detected Clinical Signs ── */}
           <GlassCard animate delay={0.2} variant="elevated" className="p-6">
-            <div>
-              <h2 className="font-display font-semibold text-foreground">
-                Child Information
-              </h2>
-              <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                Measurements and submitted health details used in this assessment.
-              </p>
-            </div>
-            <div className="mt-5 rounded-2xl border border-border/50 bg-background/30 p-4">
-              <ReportRow label="Age At Assessment" value={`${a.age} months`} />
-              <ReportRow label="Height" value={`${a.height} cm`} />
-              <ReportRow label="Weight" value={`${a.weight} kg`} />
+            <h2 className="font-display text-base font-bold text-foreground tracking-tight">
+              Detected Clinical Signs
+            </h2>
 
+            <div className="mt-4 space-y-1 max-h-[340px] overflow-y-auto pr-1">
+              {a.featureScores ? (
+                <>
+                  {scoredClinicalSigns.map((item) => (
+                    <div
+                      key={item.key}
+                      className="rounded-xl border border-border/40 bg-background/25 px-4 py-3"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-bold text-foreground">
+                          {item.title}
+                        </span>
+                        <span
+                          className={`flex-shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
+                            item.score > 0.5
+                              ? "bg-red-500/15 text-red-400 border-red-500/30"
+                              : item.score > 0.3
+                                ? "bg-amber-500/15 text-amber-400 border-amber-500/30"
+                                : "bg-sky-500/15 text-sky-400 border-sky-500/30"
+                          }`}
+                        >
+                          {item.score > 0.5
+                            ? "SEVERE"
+                            : item.score > 0.3
+                              ? "MODERATE"
+                              : "DETECTED"}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                        {item.desc}
+                      </p>
+                    </div>
+                  ))}
+                  {compactVisibleSigns.map((sign) => (
+                    <div
+                      key={`detail-${sign}`}
+                      className="rounded-xl border border-border/40 bg-background/25 px-4 py-3"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-bold text-foreground">{sign}</span>
+                        <span className="flex-shrink-0 rounded-full border border-sky-500/30 bg-sky-500/15 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-sky-400">
+                          DETECTED
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                  {!hasClinicalSigns && (
+                    <p className="text-sm text-muted-foreground py-2">
+                      No significant clinical signs were detected by the model.
+                    </p>
+                  )}
+                </>
+              ) : compactVisibleSigns.length > 0 ? (
+                compactVisibleSigns.map((sign) => (
+                  <div
+                    key={sign}
+                    className="rounded-xl border border-border/40 bg-background/25 px-4 py-3"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-bold text-foreground">{sign}</span>
+                      <span className="flex-shrink-0 rounded-full border border-sky-500/30 bg-sky-500/15 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-sky-400">
+                        DETECTED
+                      </span>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground py-2">
+                  No visible clinical signs were detected by the model in this image.
+                </p>
+              )}
             </div>
           </GlassCard>
         </div>

@@ -88,6 +88,17 @@ class CaptureMeta(BaseModel):
     imageAssessment: "ImageAssessment | None" = None
 
 
+class FeatureScores(BaseModel):
+    """Individual visual indicator scores, each 0.0–1.0."""
+    ribs: float = 0.0           # Rib / bone visibility
+    limbs: float = 0.0          # Arm & leg thinness (MUAC + muscle wasting)
+    eyes: float = 0.0           # Under-eye hollowing / sunken sockets
+    fat_loss: float = 0.0       # Facial fat loss + hair thinning
+    edema: float = 0.0          # Swelling / oedema patterns
+    skin: float = 0.0           # Skin changes (pallor, dermatosis)
+    thinness: float = 0.0       # Overall body thinness
+
+
 class ImageAssessment(BaseModel):
     visibleWastingProbability: float
     oedemaProbability: float
@@ -96,6 +107,8 @@ class ImageAssessment(BaseModel):
     qualityScore: int
     modelVersion: str
     summary: str
+    featureScores: FeatureScores = Field(default_factory=FeatureScores)
+
 
 
 class AssessmentRequest(BaseModel):

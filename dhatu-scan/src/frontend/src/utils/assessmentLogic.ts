@@ -392,6 +392,23 @@ export function calculateXP(assessment: Assessment): number {
   return xp;
 }
 
+export function createInitialGamificationState(
+  overrides: Partial<GamificationState> = {},
+): GamificationState {
+  const xp = overrides.xp ?? 0;
+  const levelInfo = getLevel(xp);
+
+  return {
+    xp,
+    level: levelInfo.level,
+    levelName: levelInfo.name,
+    badges: overrides.badges ?? [],
+    checkups: overrides.checkups ?? 0,
+    streak: overrides.streak ?? 0,
+    lastCheckupDate: overrides.lastCheckupDate,
+  };
+}
+
 export const LEVELS: LevelInfo[] = [
   {
     level: 1,

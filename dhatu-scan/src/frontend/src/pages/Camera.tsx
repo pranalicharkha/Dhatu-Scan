@@ -25,7 +25,6 @@ import {
 import { AnimatePresence, motion } from "motion/react";
 import { useTheme } from "next-themes";
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
-import { sendImageToBackend } from "../utils/api";
 // ── Guidance tips ─────────────────────────────────────────────────────────────
 const TIPS = [
   {
@@ -80,6 +79,14 @@ const FACE_LANDMARK_TARGET = 468;
 const FACE_LANDMARK_MIN_READY = 420;
 const BODY_LANDMARK_TARGET = 33;
 const BODY_LANDMARK_MIN_READY = 27;
+
+async function dataUrlToFile(dataUrl: string, filename: string): Promise<File> {
+  const response = await fetch(dataUrl);
+  const blob = await response.blob();
+  return new File([blob], filename, {
+    type: blob.type || "image/jpeg",
+  });
+}
 
 declare global {
   interface Window {
@@ -218,6 +225,86 @@ export default function Camera() {
     setSessionReady(true);
   }, []);
 
+  const mergeBackendImageAssessment = useCallback((
+    session: CameraAnalysisSession,
+    imageAssessment: Record<string, unknown> | null | undefined,
+  ): CameraAnalysisSession => {
+    if (!imageAssessment) {
+      return session;
+    }
+
+    const featureScores =
+      imageAssessment.featureScores &&
+      typeof imageAssessment.featureScores === "object"
+        ? (imageAssessment.featureScores as Record<string, number>)
+        : undefined;
+
+    return {
+      ...session,
+      imageAssessment,
+      imageRiskScore:
+        typeof imageAssessment.visibleWastingProbability === "number"
+          ? Math.round(imageAssessment.visibleWastingProbability * 100)
+          : session.imageRiskScore,
+      qualityScore:
+        typeof imageAssessment.qualityScore === "number"
+          ? imageAssessment.qualityScore
+          : session.qualityScore,
+      visibleSigns: Array.isArray(imageAssessment.visibleSigns)
+        ? (imageAssessment.visibleSigns as string[])
+        : session.visibleSigns,
+      featureBreakdown: featureScores
+        ? {
+            ribs: featureScores.ribs ?? session.featureBreakdown?.ribs ?? 0,
+            limbs: featureScores.limbs ?? session.featureBreakdown?.limbs ?? 0,
+            eyes: featureScores.eyes ?? session.featureBreakdown?.eyes ?? 0,
+            fat_loss:
+              featureScores.fat_loss ?? session.featureBreakdown?.fat_loss ?? 0,
+          }
+        : session.featureBreakdown,
+    };
+  }, []);
+
+  const enrichSessionWithBackendAssessment = useCallback(
+    async (
+      session: CameraAnalysisSession,
+      params: {
+        mode: "live" | "upload";
+        phase: "face" | "body" | "upload";
+        file?: File;
+        rawImageDataUrl?: string;
+      },
+    ) => {
+      const file =
+        params.file ??
+        (params.rawImageDataUrl
+          ? await dataUrlToFile(
+              params.rawImageDataUrl,
+              `${params.mode}-${params.phase}-capture.jpg`,
+            )
+          : null);
+
+      if (!file) {
+        return session;
+      }
+
+      const result = await uploadImageToBackend({
+        childId: params.mode === "live" ? "live_capture_child" : "upload_child",
+        mode: params.mode,
+        phase: params.phase,
+        file,
+      });
+
+      const updatedSession = mergeBackendImageAssessment(
+        session,
+        result.imageAssessment,
+      );
+      persistProcessedSession(updatedSession);
+      return updatedSession;
+    },
+    [mergeBackendImageAssessment, persistProcessedSession],
+  );
+
   const processCapturedImage = useCallback(
     async (
       rawImageDataUrl: string,
@@ -246,6 +333,8 @@ export default function Camera() {
         imageRiskScore: mlResult.imageRiskScore,
         qualityScore: mlResult.qualityScore,
         visibleSigns: mlResult.visibleSigns,
+        ribDetectionConfidence: mlResult.ribDetectionConfidence,
+        featureBreakdown: mlResult.featureBreakdown,
       };
 
       persistProcessedSession(session);
@@ -340,8 +429,8 @@ export default function Camera() {
         faceMesh.setOptions({
           maxNumFaces: 1,
           refineLandmarks: true,
-          minDetectionConfidence: 0.5,
-          minTrackingConfidence: 0.5,
+          minDetectionConfidence: 0.3,
+          minTrackingConfidence: 0.3,
         });
         faceMesh.onResults((results) => {
           latestFaceLandmarksRef.current = results.multiFaceLandmarks?.[0] ?? [];
@@ -351,11 +440,11 @@ export default function Camera() {
           locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`,
         });
         pose.setOptions({
-          modelComplexity: 1,
+          modelComplexity: 2,
           smoothLandmarks: true,
           enableSegmentation: false,
-          minDetectionConfidence: 0.5,
-          minTrackingConfidence: 0.5,
+          minDetectionConfidence: 0.3,
+          minTrackingConfidence: 0.3,
         });
         pose.onResults((results) => {
           latestPoseLandmarksRef.current = results.poseLandmarks ?? [];
@@ -363,8 +452,15 @@ export default function Camera() {
 
         faceMeshRef.current = faceMesh;
         poseRef.current = pose;
-      } catch {
-        // If MediaPipe fails to load, preserve fallback behavior below.
+      } catch (error) {
+        console.error("MediaPipe failed to load:", error);
+        // Retry loading after a short delay
+        setTimeout(() => {
+          if (!faceMeshRef.current || !poseRef.current) {
+            console.log("Retrying MediaPipe initialization...");
+            initMediapipe();
+          }
+        }, 2000);
       }
     }
 
@@ -396,8 +492,17 @@ export default function Camera() {
 
         const poseLandmarks = latestPoseLandmarksRef.current;
         const faceLandmarks = latestFaceLandmarksRef.current;
+        
+        // Fallback if MediaPipe failed to load
+        if (!poseRef.current || !faceMeshRef.current) {
+          setBodyDetectedCount(0);
+          setFaceDetectedCount(0);
+          setLiveTip("Initializing camera models... Please wait.");
+          return;
+        }
+        
         const bodyDetected = poseLandmarks.filter(
-          (p) => (p.visibility ?? 1) > 0.4,
+          (p) => (p.visibility ?? 1) > 0.2,
         ).length;
         const faceDetected = Math.min(faceLandmarks.length, FACE_LANDMARK_TARGET);
 
@@ -425,10 +530,10 @@ export default function Camera() {
         const centered = Math.abs(centerX - 0.5) < 0.18;
         const distanceOk = bodyHeight > 0.55 && bodyHeight < 0.92;
         const fullBodyVisible = bodyDetected >= BODY_LANDMARK_MIN_READY && bodyHeight > 0.52;
-        const headVisible = bodyDetected > 0 && (poseLandmarks[0]?.visibility ?? 1) > 0.4;
+        const headVisible = bodyDetected > 0 && (poseLandmarks[0]?.visibility ?? 1) > 0.2;
         const feetVisible =
-          (poseLandmarks[31]?.visibility ?? 0) > 0.3 ||
-          (poseLandmarks[32]?.visibility ?? 0) > 0.3;
+          (poseLandmarks[31]?.visibility ?? 0) > 0.2 ||
+          (poseLandmarks[32]?.visibility ?? 0) > 0.2;
 
         setBodyDetectedCount(bodyDetected);
         setFaceDetectedCount(faceDetected);
@@ -549,11 +654,7 @@ export default function Camera() {
         requestAnimationFrame(tick);
       } else {
         const image = captureFrame();
-        if (image) {
-  const response = await sendImageToBackend(image);
-  console.log(response);
-}
-        
+
         if (capturePhase === "face") {
           if (image) {
             setFaceCaptureDataUrl(image);
@@ -582,12 +683,25 @@ export default function Camera() {
             bodyCapturePoseLandmarksRef.current,
             Math.min(bodyCaptureFaceLandmarksRef.current.length, FACE_LANDMARK_TARGET),
             bodyCapturePoseLandmarksRef.current.filter(
-              (point) => (point.visibility ?? 1) > 0.4,
+              (point) => (point.visibility ?? 1) > 0.2,
             ).length,
             "live",
           )
-            .then((session) => {
-              setBodyCaptureDataUrl(session.processedImageDataUrl);
+            .then(async (session) => {
+              let finalSession = session;
+              try {
+                finalSession = await enrichSessionWithBackendAssessment(session, {
+                  mode: "live",
+                  phase: "body",
+                  rawImageDataUrl: image,
+                });
+              } catch (error) {
+                console.warn(
+                  "Backend image assessment failed for live capture.",
+                  error,
+                );
+              }
+              setBodyCaptureDataUrl(finalSession.processedImageDataUrl);
               setCapturePhase("complete");
               setCaptureState("complete");
               setCanCapture(false);
@@ -608,7 +722,14 @@ export default function Camera() {
       }
     };
     requestAnimationFrame(tick);
-  }, [captureState, canCapture, captureFrame, capturePhase, processCapturedImage]);
+  }, [
+    captureState,
+    canCapture,
+    captureFrame,
+    capturePhase,
+    enrichSessionWithBackendAssessment,
+    processCapturedImage,
+  ]);
 
   const getUploadDetectors = useCallback(async () => {
     await loadScript(
@@ -715,7 +836,7 @@ export default function Camera() {
       }
 
       const bodyDetected = localPoseLandmarks.filter(
-        (p) => (p.visibility ?? 1) > 0.4,
+        (p) => (p.visibility ?? 1) > 0.2,
       ).length;
       const faceDetected = Math.min(localFaceLandmarks.length, 468);
 
@@ -772,44 +893,18 @@ export default function Camera() {
           bodyDetected,
           "upload",
         );
-        setUploadPreviewUrl(session.processedImageDataUrl);
-
-        const result = await uploadImageToBackend({
-          childId: "upload_child",
+        const enrichedSession = await enrichSessionWithBackendAssessment(session, {
           mode: "upload",
           phase: "upload",
-          file: new File(
-            [await (await fetch(session.processedImageDataUrl)).blob()],
-            "processed-upload.jpg",
-            { type: "image/jpeg" },
-          ),
+          file,
         });
+        setUploadPreviewUrl(enrichedSession.processedImageDataUrl);
 
         // ── CRITICAL: persist the real ML image assessment from the backend ──
         // This is the output of the trained MobileNetV3 + OpenCV clinical pipeline.
         // We update the session so Form.tsx can forward it to /assessment, making
         // the image the primary driver of the final risk decision.
-        if (result.imageAssessment) {
-          const updatedSession: typeof session = {
-            ...session,
-            imageAssessment: result.imageAssessment,
-            // Also update imageRiskScore from the real model's wasting probability
-            imageRiskScore:
-              typeof result.imageAssessment.visibleWastingProbability === "number"
-                ? Math.round(result.imageAssessment.visibleWastingProbability * 100)
-                : session.imageRiskScore,
-            qualityScore:
-              typeof result.imageAssessment.qualityScore === "number"
-                ? result.imageAssessment.qualityScore
-                : session.qualityScore,
-            visibleSigns: Array.isArray(result.imageAssessment.visibleSigns)
-              ? (result.imageAssessment.visibleSigns as string[])
-              : session.visibleSigns,
-          };
-          persistProcessedSession(updatedSession);
-        }
-
-        setUploadConfirmMsg(result.message);
+        setUploadConfirmMsg("Image successfully uploaded and analyzed");
       } catch (error) {
         const message =
           error instanceof Error ? error.message.toLowerCase() : "";
@@ -835,7 +930,7 @@ export default function Camera() {
         setUploadAnalyzing(false);
       }
     },
-    [analyzeUploadedImage, processCapturedImage],
+    [analyzeUploadedImage, enrichSessionWithBackendAssessment, processCapturedImage],
   );
 
   const goToForm = useCallback(() => {
@@ -1244,6 +1339,42 @@ export default function Camera() {
                   <p className="text-muted-foreground text-sm mt-1">
                     Face and full-body images captured
                   </p>
+                  {processedSession?.ribDetectionConfidence && (
+                    <div className="mt-3 px-3 py-2 bg-white/10 rounded-lg border border-white/20">
+                      <p className="text-xs text-muted-foreground mb-1">Rib Detection Analysis</p>
+                      <div className="flex items-center justify-center gap-2">
+                        <div className="flex-1 bg-white/5 rounded-full h-2 overflow-hidden">
+                          <div 
+                            className="h-full bg-gradient-to-r from-blue-500 to-emerald-400 transition-all duration-500"
+                            style={{ width: `${processedSession.ribDetectionConfidence}%` }}
+                          />
+                        </div>
+                        <span className="text-xs font-medium text-foreground">
+                          {processedSession.ribDetectionConfidence}%
+                        </span>
+                      </div>
+                      {processedSession.featureBreakdown && (
+                        <div className="grid grid-cols-4 gap-1 mt-2 text-xs">
+                          <div className="text-center">
+                            <div className="text-muted-foreground">Ribs</div>
+                            <div className="font-medium">{processedSession.featureBreakdown.ribs}%</div>
+                          </div>
+                          <div className="text-center">
+                            <div className="text-muted-foreground">Limbs</div>
+                            <div className="font-medium">{processedSession.featureBreakdown.limbs}%</div>
+                          </div>
+                          <div className="text-center">
+                            <div className="text-muted-foreground">Eyes</div>
+                            <div className="font-medium">{processedSession.featureBreakdown.eyes}%</div>
+                          </div>
+                          <div className="text-center">
+                            <div className="text-muted-foreground">Fat</div>
+                            <div className="font-medium">{processedSession.featureBreakdown.fat_loss}%</div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <motion.button
                   data-ocid="continue-to-details-btn"

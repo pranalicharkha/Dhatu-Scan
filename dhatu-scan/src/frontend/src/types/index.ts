@@ -22,6 +22,7 @@ export interface ChildProfile {
   dateOfBirth?: string; // ISO date string
   guardianName?: string;
   location?: string;
+  gamification?: GamificationState;
   createdAt: string; // ISO date string
   updatedAt: string; // ISO date string
 }
@@ -74,6 +75,16 @@ export interface Assessment {
   bodyLandmarksDetected?: number;
   faceLandmarksDetected?: number;
   faceMasked?: boolean;
+  // Clinical indicator feature scores from image analysis (0–1 each)
+  featureScores?: {
+    ribs: number;
+    limbs: number;
+    eyes: number;
+    fat_loss: number;
+    edema: number;
+    skin: number;
+    thinness: number;
+  };
   // Notes
   notes?: string;
 }

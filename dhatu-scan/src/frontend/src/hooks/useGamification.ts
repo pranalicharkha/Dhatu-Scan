@@ -1,9 +1,9 @@
 import { useCallback } from "react";
 import { useApp } from "../context/AppContext";
-import { saveGamification } from "../data/gamificationRepository";
 import type { Badge, GamificationState } from "../types";
 import {
   ALL_BADGES,
+  createInitialGamificationState,
   getLevel,
   getLevelProgress,
 } from "../utils/assessmentLogic";
@@ -18,8 +18,16 @@ interface UseGamificationReturn {
 }
 
 export function useGamification(): UseGamificationReturn {
-  const { state, awardXP: contextAwardXP } = useApp();
-  const { gamification } = state;
+  const {
+    state,
+    activeChild,
+    awardXP: contextAwardXP,
+    updateChild,
+  } = useApp();
+  const gamification =
+    activeChild?.gamification
+      ? createInitialGamificationState(activeChild.gamification)
+      : state.gamification;
 
   const levelProgress = getLevelProgress(gamification.xp);
 
@@ -34,6 +42,7 @@ export function useGamification(): UseGamificationReturn {
     (badgeId: string): Badge | null => {
       const existing = gamification.badges.find((b) => b.id === badgeId);
       if (existing?.unlocked) return null; // already unlocked
+      if (!activeChild) return null;
 
       const badgeTemplate = ALL_BADGES.find((b) => b.id === badgeId);
       if (!badgeTemplate) return null;
@@ -53,19 +62,20 @@ export function useGamification(): UseGamificationReturn {
         updatedBadges.push(newBadge);
       }
 
-      const updated: GamificationState = {
+      const updated: GamificationState = createInitialGamificationState({
         ...gamification,
         badges: updatedBadges,
         xp: gamification.xp + newBadge.xpReward,
-      };
-      const levelInfo = getLevel(updated.xp);
-      updated.level = levelInfo.level;
-      updated.levelName = levelInfo.name;
+      });
 
-      void saveGamification(updated);
+      updateChild({
+        ...activeChild,
+        gamification: updated,
+        updatedAt: new Date().toISOString(),
+      });
       return newBadge;
     },
-    [gamification],
+    [activeChild, gamification, updateChild],
   );
 
   const checkAndUnlockBadges = useCallback((): Badge[] => {

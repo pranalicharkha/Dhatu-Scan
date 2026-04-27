@@ -11,6 +11,13 @@ export interface CameraAnalysisSession {
   imageRiskScore: number;
   qualityScore: number;
   visibleSigns: string[];
+  ribDetectionConfidence: number;
+  featureBreakdown?: {
+    ribs: number;
+    limbs: number;
+    eyes: number;
+    fat_loss: number;
+  };
   // Full image assessment returned by /upload-image — carries the real ML output.
   imageAssessment?: Record<string, unknown> | null;
 }

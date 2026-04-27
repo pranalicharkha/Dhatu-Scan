@@ -23,7 +23,10 @@ import {
 import { getCurrentUser } from "../data/userRepository";
 import { startAutoSync, stopAutoSync } from "../data/syncService";
 import type { Assessment, ChildProfile, GamificationState } from "../types";
-import { calculateXP, getLevel } from "../utils/assessmentLogic";
+import {
+  calculateXP,
+  createInitialGamificationState,
+} from "../utils/assessmentLogic";
 // Sample data removed - using real user data only
 
 interface AppState {
@@ -47,14 +50,7 @@ type AppAction =
   | { type: "UPDATE_GAMIFICATION"; payload: GamificationState }
   | { type: "SET_LOADING"; payload: boolean };
 
-const defaultGamification: GamificationState = {
-  xp: 0,
-  level: 1,
-  levelName: "Starting Point",
-  badges: [],
-  checkups: 0,
-  streak: 0,
-};
+const defaultGamification: GamificationState = createInitialGamificationState();
 
 const initialState: AppState = {
   children: [],
@@ -96,6 +92,28 @@ function setAuthEmail(email: string | null): void {
   localStorage.removeItem(META_KEYS.AUTH_EMAIL);
 }
 
+function ensureChildGamification(
+  child: ChildProfile,
+  fallback?: GamificationState,
+): ChildProfile {
+  return {
+    ...child,
+    gamification: createInitialGamificationState(child.gamification ?? fallback),
+  };
+}
+
+function deriveActiveGamification(
+  children: ChildProfile[],
+  activeChildId: string | null,
+  fallback: GamificationState = defaultGamification,
+): GamificationState {
+  const activeChild =
+    children.find((child) => child.id === activeChildId) ?? children[0] ?? null;
+  return activeChild?.gamification
+    ? createInitialGamificationState(activeChild.gamification)
+    : fallback;
+}
+
 async function syncAuthIdentityFromCurrentUser() {
   const user = await getCurrentUser();
   setAuthEmail(user?.email ?? null);
@@ -107,35 +125,82 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case "INIT":
       return { ...action.payload, isLoading: false };
     case "SET_CHILDREN":
-      return { ...state, children: action.payload };
+      return {
+        ...state,
+        children: action.payload,
+        gamification: deriveActiveGamification(
+          action.payload,
+          state.activeChildId,
+          state.gamification,
+        ),
+      };
     case "SET_ACTIVE_CHILD":
-      return { ...state, activeChildId: action.payload };
+      return {
+        ...state,
+        activeChildId: action.payload,
+        gamification: deriveActiveGamification(
+          state.children,
+          action.payload,
+          state.gamification,
+        ),
+      };
     case "ADD_CHILD":
-      return { ...state, children: [...state.children, action.payload] };
-    case "UPDATE_CHILD":
       return {
         ...state,
-        children: state.children.map((child) =>
-          child.id === action.payload.id ? action.payload : child,
+        children: [...state.children, action.payload],
+        activeChildId: action.payload.id,
+        gamification: createInitialGamificationState(action.payload.gamification),
+      };
+    case "UPDATE_CHILD": {
+      const updatedChildren = state.children.map((child) =>
+        child.id === action.payload.id ? action.payload : child,
+      );
+      return {
+        ...state,
+        children: updatedChildren,
+        gamification: deriveActiveGamification(
+          updatedChildren,
+          state.activeChildId,
+          state.gamification,
         ),
       };
-    case "REPLACE_CHILD_ID":
+    }
+    case "REPLACE_CHILD_ID": {
+      const replacedChildren = state.children.map((child) =>
+        child.id === action.payload.oldId ? action.payload.child : child,
+      );
+      const nextActiveChildId =
+        state.activeChildId === action.payload.oldId
+          ? action.payload.child.id
+          : state.activeChildId;
       return {
         ...state,
-        children: state.children.map((child) =>
-          child.id === action.payload.oldId ? action.payload.child : child,
+        children: replacedChildren,
+        activeChildId: nextActiveChildId,
+        gamification: deriveActiveGamification(
+          replacedChildren,
+          nextActiveChildId,
+          state.gamification,
         ),
-        activeChildId:
-          state.activeChildId === action.payload.oldId
-            ? action.payload.child.id
-            : state.activeChildId,
       };
-    case "REMOVE_CHILD":
+    }
+    case "REMOVE_CHILD": {
+      const remainingChildren = state.children.filter(
+        (child) => child.id !== action.payload,
+      );
+      const remainingActiveChildId =
+        state.activeChildId === action.payload ? null : state.activeChildId;
       return {
         ...state,
-        children: state.children.filter((child) => child.id !== action.payload),
-        activeChildId: state.activeChildId === action.payload ? null : state.activeChildId,
+        children: remainingChildren,
+        activeChildId: remainingActiveChildId,
+        gamification: deriveActiveGamification(
+          remainingChildren,
+          remainingActiveChildId,
+          defaultGamification,
+        ),
       };
+    }
     case "ADD_ASSESSMENT":
       return {
         ...state,
@@ -162,7 +227,7 @@ interface AppContextValue {
   removeChild: (id: string) => void;
   setActiveChild: (id: string | null) => void;
   addAssessment: (assessment: Assessment) => void;
-  awardXP: (xp: number) => void;
+  awardXP: (xp: number, childId?: string) => void;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -173,20 +238,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const childProfiles = await getChildren();
     const allAssessments = await getAssessments();
     const storedGamification = await getGamification();
-    const gamification = storedGamification
-      ? {
-          ...storedGamification,
-          level: getLevel(storedGamification.xp).level,
-          levelName: getLevel(storedGamification.xp).name,
-        }
+    const legacyGamification = storedGamification
+      ? createInitialGamificationState(storedGamification)
       : defaultGamification;
+    const gamificationSeedUsed = childProfiles.some((child) => child.gamification);
+    const normalizedChildren = childProfiles.map((child, index) =>
+      ensureChildGamification(
+        child,
+        !gamificationSeedUsed && index === 0 ? legacyGamification : undefined,
+      ),
+    );
+    normalizedChildren.forEach((child, index) => {
+      if (!childProfiles[index]?.gamification) {
+        void saveChild(child);
+      }
+    });
+    const activeChildId = normalizedChildren[0]?.id ?? null;
     const auth = isAuthenticated();
 
     return {
-      children: childProfiles,
+      children: normalizedChildren,
       assessments: allAssessments,
-      activeChildId: childProfiles[0]?.id ?? null,
-      gamification,
+      activeChildId,
+      gamification: deriveActiveGamification(
+        normalizedChildren,
+        activeChildId,
+        legacyGamification,
+      ),
       isAuthenticated: auth,
       isLoading: false,
     };
@@ -363,14 +441,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const addChild = useCallback((child: ChildProfile) => {
-    void saveChild(child);
-    dispatch({ type: "ADD_CHILD", payload: child });
-    dispatch({ type: "SET_ACTIVE_CHILD", payload: child.id });
+    const childWithGamification = ensureChildGamification(child);
+    void saveChild(childWithGamification);
+    dispatch({ type: "ADD_CHILD", payload: childWithGamification });
   }, []);
 
   const updateChild = useCallback((child: ChildProfile) => {
-    void saveChild(child);
-    dispatch({ type: "UPDATE_CHILD", payload: child });
+    const childWithGamification = ensureChildGamification(child);
+    void saveChild(childWithGamification);
+    dispatch({ type: "UPDATE_CHILD", payload: childWithGamification });
   }, []);
 
   const removeChild = useCallback((id: string) => {
@@ -379,8 +458,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const replaceChildId = useCallback((oldId: string, child: ChildProfile) => {
-    void replaceChildIdInRepo(oldId, child);
-    dispatch({ type: "REPLACE_CHILD_ID", payload: { oldId, child } });
+    const childWithGamification = ensureChildGamification(child);
+    void replaceChildIdInRepo(oldId, childWithGamification);
+    dispatch({
+      type: "REPLACE_CHILD_ID",
+      payload: { oldId, child: childWithGamification },
+    });
   }, []);
 
   const setActiveChild = useCallback((id: string | null) => {
@@ -388,19 +471,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const awardXP = useCallback(
-    (xp: number) => {
-      const updated: GamificationState = {
-        ...state.gamification,
-        xp: state.gamification.xp + xp,
-        checkups: state.gamification.checkups + 1,
+    (xp: number, childId?: string) => {
+      const targetChildId = childId ?? state.activeChildId;
+      if (!targetChildId) return;
+
+      const targetChild = state.children.find((child) => child.id === targetChildId);
+      if (!targetChild) return;
+
+      const updatedGamification = createInitialGamificationState({
+        ...targetChild.gamification,
+        xp: (targetChild.gamification?.xp ?? 0) + xp,
+        checkups: (targetChild.gamification?.checkups ?? 0) + 1,
+        lastCheckupDate: new Date().toISOString(),
+      });
+
+      const updatedChild: ChildProfile = {
+        ...targetChild,
+        gamification: updatedGamification,
+        updatedAt: new Date().toISOString(),
       };
-      const levelInfo = getLevel(updated.xp);
-      updated.level = levelInfo.level;
-      updated.levelName = levelInfo.name;
-      void saveGamification(updated);
-      dispatch({ type: "UPDATE_GAMIFICATION", payload: updated });
+
+      void saveChild(updatedChild);
+      void saveGamification(updatedGamification);
+      dispatch({ type: "UPDATE_CHILD", payload: updatedChild });
     },
-    [state.gamification],
+    [state.activeChildId, state.children],
   );
 
   const addAssessment = useCallback(
@@ -408,7 +503,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       void saveAssessmentRecord(assessment);
       dispatch({ type: "ADD_ASSESSMENT", payload: assessment });
       const xp = calculateXP(assessment);
-      awardXP(xp);
+      awardXP(xp, assessment.childId);
     },
     [awardXP],
   );
