@@ -221,7 +221,7 @@ export default function AuthPage() {
         />
       </div>
 
-      <header className="px-4 py-6 sm:px-6 lg:px-10">
+      <header className="px-4 py-3 sm:px-6 lg:px-10">
         <div
           className="mx-auto flex max-w-7xl items-center justify-between"
         >
@@ -245,13 +245,11 @@ export default function AuthPage() {
             </div>
           </Link>
 
-          <div className="flex items-center justify-between gap-3 sm:gap-4 w-full sm:w-auto">
-            <div className="hidden sm:block">
-              <ThemeToggle compact />
-            </div>
+          <div className="flex items-center gap-3 sm:gap-4">
+            <ThemeToggle compact />
             <Link
               to="/login"
-              className="rounded-full px-5 py-2 text-sm font-semibold transition-smooth"
+              className="rounded-full px-5 py-2 text-sm font-semibold transition-smooth hover:scale-105"
               style={{
                 backgroundColor: badgeBackground,
                 color: primaryText,
@@ -262,7 +260,7 @@ export default function AuthPage() {
             </Link>
             <Link
               to="/register"
-              className="rounded-full px-5 py-2 text-sm font-semibold transition-smooth"
+              className="rounded-full px-5 py-2 text-sm font-semibold transition-smooth hover:scale-105"
               style={{
                 backgroundColor: PALETTE.buttonDark,
                 color: PALETTE.white,
@@ -274,9 +272,9 @@ export default function AuthPage() {
         </div>
       </header>
 
-      <main className="px-4 pt-8 sm:px-6 lg:px-10">
+      <main className="px-4 pt-0 sm:px-6 lg:px-10">
         <div className="mx-auto max-w-7xl">
-          <section className="grid items-center gap-10 py-8 lg:grid-cols-[1fr_1fr] lg:py-14 lg:pl-8">
+          <section className="grid items-center gap-6 py-2 lg:grid-cols-[1fr_1.15fr] lg:py-4 lg:pl-8">
             <div className="max-w-2xl lg:ml-4">
               <motion.span
                 initial={{ opacity: 0, y: 10 }}
@@ -295,18 +293,18 @@ export default function AuthPage() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.08 }}
-                className="mt-2 font-display text-5xl font-extrabold leading-tight sm:text-6xl lg:text-7xl"
+                className="mt-1 font-display text-5xl font-extrabold leading-tight sm:text-6xl lg:text-7xl"
                 style={{ color: primaryText }}
               >
-                Turning hidden signs into
+                Spot the signs early,
                 <span
                   className="block"
                   style={{ color: isDark ? PALETTE.darkHeadingAccent : "#5f5282" }}
                 >
-                  lifesaving insights
+                  safeguard what matters most
                 </span>
                 <span
-                  className="block mt-6 text-3xl font-bold"
+                  className="block mt-3 text-3xl font-bold"
                   style={{ color: isDark ? PALETTE.darkHeadingAccent : "#5f5282" }}
                 >
                   with privacy-first AI

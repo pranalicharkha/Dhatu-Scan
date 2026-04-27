@@ -131,6 +131,7 @@ export default function Form() {
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const cameraSession = getCameraAnalysisSession();
+  console.log("Form loaded - cameraSession:", cameraSession);
 
   const ageMonths = useMemo(() => {
     if (!activeChild) return 0;
@@ -225,8 +226,14 @@ export default function Form() {
         activeChild.gender,
       );
 
+      console.log("=== SUBMITTING ASSESSMENT ===");
+      console.log("cameraSession:", cameraSession);
+      console.log("cameraSession.maskedImageDataUrl:", cameraSession?.maskedImageDataUrl);
+      console.log("cameraSession.imageRiskScore:", cameraSession?.imageRiskScore);
+      
       if (isBackendConfigured()) {
         try {
+          console.log("Calling backend with image data...");
           const backendResult = await submitAssessmentToBackend({
             childId: activeChild.id,
             childName: activeChild.name,
@@ -251,8 +258,14 @@ export default function Form() {
             // Forward the full ML image assessment from /upload-image so the
             // backend uses the real trained model output as its primary signal.
             imageAssessment: cameraSession.imageAssessment ?? null,
+            maskedImageDataUrl: cameraSession.maskedImageDataUrl,
           });
 
+          console.log("=== BACKEND RESULT ===");
+          console.log("Backend result:", backendResult);
+          console.log("Fusion score:", backendResult.scores.fusionScore);
+          console.log("Risk level:", backendResult.scores.riskLevel);
+          
           wastingScore = backendResult.scores.wastingScore;
           dietaryScore = backendResult.scores.dietaryScore;
           finalScore = backendResult.scores.fusionScore;
@@ -296,7 +309,6 @@ export default function Form() {
           dietaryScore,
           imageRiskScore,
         );
-        finalScore = applyWHORiskFloor(finalScore, whoResult);
         riskLevel = getRiskCategory(finalScore).level;
         whoZScore = whoResult.zScore;
         whoStatus = whoResult.status;

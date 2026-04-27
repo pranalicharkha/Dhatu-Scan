@@ -283,7 +283,7 @@ export function calculateIntegratedRiskScore(
 ): number {
   return Math.max(
     0,
-    Math.min(100, Math.round(wastingScore * 0.55 + dietaryScore * 0.2 + imageRiskScore * 0.25)),
+    Math.min(100, Math.round(wastingScore * 0.2 + dietaryScore * 0.1 + imageRiskScore * 0.7)),
   );
 }
 
@@ -329,17 +329,6 @@ export function getRiskCategoryByLevel(level: RiskLevel): RiskCategory {
 }
 
 export function applyWHORiskFloor(score: number, whoResult: WHOZScoreResult): number {
-  if (whoResult.zScore <= -3 || whoResult.status === "severe_wasting") {
-    return Math.max(score, 61);
-  }
-  if (
-    whoResult.zScore <= -2 ||
-    ["wasted", "stunted", "underweight", "severe_stunting", "severe_underweight"].includes(
-      whoResult.status,
-    )
-  ) {
-    return Math.max(score, 31);
-  }
   return score;
 }
 

@@ -143,8 +143,8 @@ export default function GlobeHero() {
   const [activeRegion, setActiveRegion] = useState<any>(null);
 
   return (
-    <div className="-mt-12 relative w-full aspect-square max-w-[700px] mx-auto lg:ml-auto xl:mr-5">
-      <Canvas camera={{ position: [0, 0, 6], fov: 60 }} className="cursor-crosshair overflow-visible">
+    <div className="relative w-full aspect-square max-w-[850px] mx-auto lg:ml-auto xl:mr-0">
+      <Canvas camera={{ position: [0, 0, 4.5], fov: 50 }} className="cursor-crosshair overflow-visible">
         <ambientLight intensity={0.5} />
         <directionalLight position={[5, 5, 5]} intensity={3.5} color="#ffffff" />
         <directionalLight position={[-5, -3, -5]} intensity={1.5} color="#bae6fd" />

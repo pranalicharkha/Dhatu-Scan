@@ -207,7 +207,7 @@ export default function Privacy() {
     lines.push("");
     lines.push("── CHILDREN ──");
     for (const child of exportPayload.children) {
-      lines.push(`  Name: ${child.name}  |  DOB: ${child.dob}  |  Gender: ${child.gender}`);
+      lines.push(`  Name: ${child.name}  |  DOB: ${child.dateOfBirth ?? "N/A"}  |  Gender: ${child.gender}`);
     }
     lines.push("");
     lines.push("── ASSESSMENTS ──");

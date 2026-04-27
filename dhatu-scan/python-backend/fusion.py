@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Literal
-
 from schemas import ImageAssessment, RiskLevel, WHOStatus
 
 
@@ -15,72 +13,62 @@ def calculate_fusion_score(
     image_assessment: ImageAssessment | None,
     embedding_hint: float | None,
 ) -> dict:
-    """Combine anthropometry, diet, and image into a single 0-100 risk score.
-
-    Returns a dict with:
-        fusionScore:  combined 0-100 risk score
-        imageScore:   numerical image risk (0-100)
-        imageWeight:  applied weight for image signal
-        anthroWeight: applied weight for anthropometry
-        dietWeight:   applied weight for dietary input
-
-    Weight philosophy (image-led):
-    ─────────────────────────────────────────────────────────────────────────
-    The trained image model is the most objective signal because it observes
-    the child directly.  Metadata (age/height/weight/diet) is self-reported
-    and can be wrong.  Therefore image is the PRIMARY driver:
-
-        High quality image  (qualityScore ≥ 80): image=60%, anthro=28%, diet=12%
-        Medium quality      (55–79):             image=50%, anthro=32%, diet=18%
-        Low quality / none  (<55 or missing):    image=40%, anthro=38%, diet=22%
-
-    When no real image signal is available the score degrades gracefully to
-    an anthropometry-led fallback.
-    """
-    image_signal: float = 0.0
+    """Combine anthropometry, diet, and image into a structured risk score."""
+    image_signal = 0.0
     image_quality: int | None = None
+    has_image_data = False
+
+    print(f"[FUSION] Input - wasting: {wasting_score}, dietary: {dietary_score}")
+    print(f"[FUSION] image_assessment: {image_assessment}, embedding_hint: {embedding_hint}")
 
     if image_assessment is not None:
-        # Use the ML model's wasting probability as the image signal (0-100)
         image_signal = image_assessment.visibleWastingProbability * 100.0
         image_quality = image_assessment.qualityScore
+        has_image_data = True
+        print(f"[FUSION] Using image_assessment - signal: {image_signal}, quality: {image_quality}")
     elif embedding_hint is not None:
         image_signal = clamp(embedding_hint, 0.0, 100.0)
+        has_image_data = True
+        print(f"[FUSION] Using embedding_hint - signal: {image_signal}")
     else:
-        # No image at all — fall back to anthropometry only
-        image_signal = wasting_score
+        print("[FUSION] No image data - using metadata only")
 
-    # ── Weight assignment based on image quality ──────────────────────────
-    if image_assessment is None and embedding_hint is None:
-        # Pure anthropometry fallback — no image available
-        image_weight       = 0.0
-        anthropometric_weight = 0.70
-        dietary_weight     = 0.30
-    elif image_quality is not None and image_quality >= 80:
-        # High-quality image → trust it most
-        image_weight       = 0.60
-        anthropometric_weight = 0.28
-        dietary_weight     = 0.12
-    elif image_quality is not None and image_quality >= 55:
-        # Medium-quality image → balanced lean toward image
-        image_weight       = 0.50
-        anthropometric_weight = 0.32
-        dietary_weight     = 0.18
+    if has_image_data:
+        image_weight = 0.70
+        anthropometric_weight = 0.20
+        dietary_weight = 0.10
+
+        if image_signal >= 60:
+            image_weight = 0.80
+            anthropometric_weight = 0.15
+            dietary_weight = 0.05
+            print("[FUSION] High risk from image - increased weight to 80%")
+
+        if image_quality is not None and image_quality < 50:
+            image_weight = max(image_weight - 0.10, 0.60)
+            anthropometric_weight = min(anthropometric_weight + 0.05, 0.25)
+            dietary_weight = min(dietary_weight + 0.05, 0.15)
+            print("[FUSION] Poor image quality - adjusted weights")
     else:
-        # Low quality / embedding hint only → image still leads but less so
-        image_weight       = 0.40
-        anthropometric_weight = 0.38
-        dietary_weight     = 0.22
+        image_weight = 0.0
+        anthropometric_weight = 0.70
+        dietary_weight = 0.30
 
     fusion = round(
         clamp(
-            wasting_score * anthropometric_weight
-            + dietary_score * dietary_weight
-            + image_signal * image_weight,
+            image_signal * image_weight
+            + wasting_score * anthropometric_weight
+            + dietary_score * dietary_weight,
             0.0,
             100.0,
         ),
         2,
+    )
+
+    print(
+        "[FUSION] Final score: "
+        f"{fusion} (image: {image_weight*100}%, "
+        f"anthropometry: {anthropometric_weight*100}%, dietary: {dietary_weight*100}%)"
     )
 
     return {
@@ -101,26 +89,14 @@ def risk_from_score(score: float) -> RiskLevel:
 
 
 def apply_who_risk_nudge(score: float, who_z: float, who_status: WHOStatus) -> float:
-    """Soft WHO advisory nudge — does NOT hard-force a risk category.
-
-    If the WHO z-score indicates severe malnutrition we nudge the fusion
-    score upward by at most +15 points at 50 % strength.  This means a
-    clear, high-quality image showing a healthy child can still produce a
-    low or moderate result even when anthropometry is slightly off, while
-    truly severe WHO classifications still add meaningful weight.
-
-    Contrast with the old _apply_who_risk_floor() which forced the score
-    to ≥61 (high) or ≥31 (moderate) regardless of image evidence.
-    """
+    """Soft WHO advisory nudge that does not hard-force a risk category."""
     if who_z <= -3.0 or who_status in {
         "severe_wasting", "severe_stunting", "severe_underweight"
     }:
-        # Severe — nudge toward 'high' threshold (61) but only partially
         gap = max(0.0, 61.0 - score)
         return round(score + gap * 0.50, 2)
 
     if who_z <= -2.0 or who_status in {"wasted", "stunted", "underweight"}:
-        # Moderate — nudge toward 'moderate' threshold (31) but only partially
         gap = max(0.0, 31.0 - score)
         return round(score + gap * 0.40, 2)
 
@@ -145,7 +121,7 @@ def build_assessment_summary(
     )
     return (
         f"WHO growth result indicates {who_text}. "
-        f"Combined screening risk is {risk_level}. "
+        f"Combined screening risk is {risk_level}, with masked-image analysis treated as the primary signal. "
         f"{image_text} "
         f"{clinical_signs_text}"
     )

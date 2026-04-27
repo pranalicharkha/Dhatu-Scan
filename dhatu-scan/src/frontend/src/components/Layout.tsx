@@ -71,11 +71,13 @@ export default function Layout() {
         </button>
       )}
 
-      <div
-        className={`fixed right-4 top-4 z-50 ${showShell ? "md:right-6" : ""}`}
-      >
-        <ThemeToggle />
-      </div>
+      {showShell && (
+        <div
+          className={`fixed right-4 top-4 z-50 ${showShell ? "md:right-6" : ""}`}
+        >
+          <ThemeToggle />
+        </div>
+      )}
 
       {showShell && <DhatuAssistant />}
 

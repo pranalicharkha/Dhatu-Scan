@@ -36,6 +36,7 @@ export interface BackendAssessmentInput {
   visibleSigns?: string[];
   // Pre-computed full ImageAssessment from /upload-image — the real ML result.
   imageAssessment?: Record<string, unknown> | null;
+  maskedImageDataUrl?: string | null;
 }
 
 export interface BackendAssessmentResult {
@@ -48,8 +49,12 @@ export interface BackendAssessmentResult {
     whoStatus: WHOStatus;
     wastingScore: number;
     dietaryScore: number;
+    imageScore: number;
     fusionScore: number;
     riskLevel: RiskLevel;
+    imageWeight: number;
+    anthroWeight: number;
+    dietWeight: number;
   };
 }
 
@@ -168,7 +173,12 @@ export async function submitAssessmentToBackend(
         imageAssessment: input.imageAssessment ?? null,
       },
       originalImage: null,
-      maskedImage: null,
+      maskedImage: input.maskedImageDataUrl
+        ? {
+            dataUrl: input.maskedImageDataUrl,
+            contentType: "image/jpeg",
+          }
+        : null,
     }),
   });
 

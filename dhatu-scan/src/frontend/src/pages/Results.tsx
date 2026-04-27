@@ -1023,7 +1023,7 @@ export default function Results() {
           </div>
           <div className="mt-4 pt-4 border-border/40">
             <p className="text-[11px] text-muted-foreground text-center">
-              FinalScore = 0.7 × WastingScore + 0.3 × DietaryRisk &nbsp;|&nbsp;
+              Fusion Score = 0.70 × ImageModel + 0.20 × Anthropometry + 0.10 × Dietary &nbsp;|&nbsp;
               <span className="text-primary">
                 0–30 Low · 31–60 Moderate · 61–100 High
               </span>
@@ -1087,28 +1087,28 @@ export default function Results() {
                 <WHOIndicatorCard
                   label="WAZ"
                   title="Underweight"
-                  subtitle="Weight-for-age"
+                  fullForm="Weight-for-age"
                   value={assessment.waz ?? assessment.whoZScore}
                   status={assessment.underweightStatus ?? assessment.whoStatus}
                 />
                 <WHOIndicatorCard
                   label="HAZ"
                   title="Stunting"
-                  subtitle="Height-for-age"
+                  fullForm="Height-for-age"
                   value={assessment.haz ?? assessment.whoZScore}
                   status={assessment.stuntingStatus ?? assessment.whoStatus}
                 />
                 <WHOIndicatorCard
                   label="WHZ"
                   title="Wasting"
-                  subtitle="Weight-for-height"
+                  fullForm="Weight-for-height"
                   value={assessment.whz ?? assessment.whoZScore}
                   status={assessment.wastingStatus ?? assessment.whoStatus}
                 />
                 <WHOIndicatorCard
                   label="BAZ"
                   title="BMI-for-age"
-                  subtitle="Growth analysis"
+                  fullForm="Growth analysis"
                   value={
                     assessment.baz ??
                     Number(
@@ -1219,8 +1219,7 @@ export default function Results() {
           animate
           delay={0.22}
           variant="elevated"
-          className="hidden p-6"
-          aria-hidden="true"
+          className="p-6"
         >
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div>
@@ -1245,14 +1244,14 @@ export default function Results() {
           </div>
           <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
             <AnalysisMetric
-              label="WHO / Anthropometry"
-              value={`${a.whoStatus.replace(/_/g, " ")}`}
+              label="Image Model Risk"
+              value={imageRiskMeta.label}
               tone={
-                a.whoStatus === "normal"
+                imageRisk <= 30
                   ? "good"
-                  : a.whoStatus.includes("severe")
-                    ? "bad"
-                    : "warn"
+                  : imageRisk <= 60
+                    ? "warn"
+                    : "bad"
               }
             />
             <AnalysisMetric
@@ -1276,16 +1275,38 @@ export default function Results() {
           </div>
           <div className="mt-4 rounded-2xl border border-border/40 bg-background/30 p-4">
             <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
-              Combined Summary
+              Clinical Assessment Summary
             </div>
             <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-              {""}
+              This assessment utilizes a multi-modal clinical approach with <span className="text-foreground font-semibold">image analysis as the primary indicator (70% weight)</span>.
+              Visual clinical signs detected through AI analysis take precedence over anthropometric measurements to ensure accurate diagnosis even if metadata is incomplete or incorrect.
             </p>
-            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-              Image: <span className="text-foreground">{imageRiskMeta.label.toLowerCase()}</span>.
-              {" "}User info: <span className="text-foreground">{riskCategory.label.toLowerCase()}</span>.
-              {" "}WHO: <span className="text-foreground">{a.whoStatus.replace(/_/g, " ")}</span>.
-            </p>
+            <div className="mt-3 grid grid-cols-1 gap-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">Image-based risk:</span>
+                <span className="text-foreground font-medium">{imageRiskMeta.label}</span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">Composite fusion score:</span>
+                <span className="text-foreground font-medium">{a.finalScore}/100</span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">WHO anthropometric status:</span>
+                <span className="text-foreground font-medium">{a.whoStatus.replace(/_/g, " ")}</span>
+              </div>
+              {a.imageVisibleSigns && a.imageVisibleSigns.length > 0 && (
+                <div className="mt-2 pt-2 border-t border-border/30">
+                  <span className="text-[11px] uppercase tracking-wide text-muted-foreground block mb-1">Detected Clinical Signs:</span>
+                  <div className="flex flex-wrap gap-1">
+                    {a.imageVisibleSigns.map((sign, idx) => (
+                      <span key={idx} className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+                        {sign}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </GlassCard>
 
