@@ -1,5 +1,6 @@
 fastapi==0.115.12
 uvicorn==0.34.2
+gunicorn==23.0.0
 python-jose==3.5.0
 bcrypt==4.3.0
 pydantic==2.11.4
@@ -7,3 +8,5 @@ SQLAlchemy==2.0.40
 python-multipart==0.0.20
 numpy==2.2.5
 opencv-python-headless==4.11.0.86
+tensorflow==2.16.1
+pillow==10.4.0
