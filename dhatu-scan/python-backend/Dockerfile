@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-# Force redeploy - version 2.0
+# Force redeploy - version 3.0
 WORKDIR /app
 
 # Minimal system dependencies for opencv-python-headless
@@ -16,6 +16,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-EXPOSE 8000
+# Use Railway's PORT environment variable
+ENV PORT=8000
+EXPOSE $PORT
 
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port ${PORT}"]
