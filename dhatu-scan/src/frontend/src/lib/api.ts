@@ -1,29 +1,15 @@
 // Central API configuration for Dhatu-Scan
 // All fetch calls to the backend should import from here.
-const DEFAULT_API_PORT = "8000";
-
-function getDefaultApiBase(): string {
-  if (typeof window === "undefined") {
-    return `http://127.0.0.1:${DEFAULT_API_PORT}`;
-  }
-
-  const { protocol, hostname } = window.location;
-  const normalizedHost = hostname.trim().toLowerCase();
-
-  if (!normalizedHost || normalizedHost === "localhost" || normalizedHost === "127.0.0.1") {
-    return `http://127.0.0.1:${DEFAULT_API_PORT}`;
-  }
-
-  const apiProtocol = protocol === "https:" ? "https:" : "http:";
-  return `${apiProtocol}//${hostname}:${DEFAULT_API_PORT}`;
-}
 
 function resolveApiBase(): string {
-  const envUrl = import.meta.env.VITE_PY_BACKEND_URL ?? import.meta.env.PY_BACKEND_URL;
+  // In production (Vercel), VITE_PY_BACKEND_URL must be set to the Render backend URL.
+  // In local dev, falls back to localhost:8000.
+  const envUrl = import.meta.env.VITE_PY_BACKEND_URL ?? import.meta.env.VITE_API_URL;
   if (typeof envUrl === "string" && envUrl.trim().length > 0) {
     return envUrl.replace(/\/$/, "");
   }
-  return getDefaultApiBase();
+  // Local development fallback only — never used in production
+  return "http://127.0.0.1:8000";
 }
 
 export const API_BASE = resolveApiBase();
