@@ -1,0 +1,155 @@
+```mermaid
+useCaseDiagram
+    actor "Parent" as parent
+    actor "Admin" as admin
+    actor "AI System" as ai
+    actor "Database" as db
+    
+    package "Authentication" {
+        usecase "Register Account" as UC1
+        usecase "Login" as UC2
+        usecase "Logout" as UC3
+        usecase "Reset Password" as UC4
+    }
+    
+    package "Child Management" {
+        usecase "Add Child Profile" as UC5
+        usecase "Edit Child Profile" as UC6
+        usecase "Delete Child Profile" as UC7
+        usecase "View Child Details" as UC8
+    }
+    
+    package "Image Capture & Analysis" {
+        usecase "Capture Photo" as UC9
+        usecase "Upload Photo" as UC10
+        usecase "Real-time Posture Guidance" as UC11
+        usecase "Lighting Guidance" as UC12
+        usecase "Face Masking" as UC13
+        usecase "Body Landmark Detection" as UC14
+    }
+    
+    package "Assessment" {
+        usecase "Submit Assessment" as UC15
+        usecase "Enter Anthropometric Data" as UC16
+        usecase "Enter Dietary Information" as UC17
+        usecase "AI Malnutrition Detection" as UC18
+        usecase "Clinical Signs Detection" as UC19
+        usecase "Fusion Score Calculation" as UC20
+    }
+    
+    package "Results & Reports" {
+        usecase "View Assessment Results" as UC21
+        usecase "View Risk Level" as UC22
+        usecase "View WHO Status" as UC23
+        usecase "View Clinical Signs" as UC24
+        usecase "Download Report" as UC25
+        usecase "View Assessment History" as UC26
+    }
+    
+    package "Dashboard" {
+        usecase "View Growth Trends" as UC27
+        usecase "View Recent Assessments" as UC28
+        usecase "View Gamification Progress" as UC29
+        usecase "Unlock Badges" as UC30
+        usecase "Earn XP" as UC31
+    }
+    
+    package "AI Assistant" {
+        usecase "Chat with AI Assistant" as UC32
+        usecase "Get Nutrition Advice" as UC33
+        usecase "Get Health Tips" as UC34
+    }
+    
+    package "Admin Functions" {
+        usecase "Manage Users" as UC35
+        usecase "View System Health" as UC36
+        usecase "Monitor Assessments" as UC37
+    }
+    
+    parent --> UC1
+    parent --> UC2
+    parent --> UC3
+    parent --> UC4
+    
+    parent --> UC5
+    parent --> UC6
+    parent --> UC7
+    parent --> UC8
+    
+    parent --> UC9
+    parent --> UC10
+    parent --> UC11
+    parent --> UC12
+    
+    ai --> UC13
+    ai --> UC14
+    
+    parent --> UC15
+    parent --> UC16
+    parent --> UC17
+    ai --> UC18
+    ai --> UC19
+    ai --> UC20
+    
+    parent --> UC21
+    parent --> UC22
+    parent --> UC23
+    parent --> UC24
+    parent --> UC25
+    parent --> UC26
+    
+    parent --> UC27
+    parent --> UC28
+    parent --> UC29
+    parent --> UC30
+    parent --> UC31
+    
+    parent --> UC32
+    parent --> UC33
+    parent --> UC34
+    
+    admin --> UC35
+    admin --> UC36
+    admin --> UC37
+    
+    db --> UC1
+    db --> UC2
+    db --> UC5
+    db --> UC6
+    db --> UC7
+    db --> UC8
+    db --> UC15
+    db --> UC21
+    db --> UC26
+    db --> UC27
+    db --> UC28
+    db --> UC29
+    db --> UC30
+    db --> UC31
+    db --> UC35
+    db --> UC36
+    db --> UC37
+    
+    note right of parent
+        Parent is the primary user
+        who manages child profiles,
+        conducts assessments, and
+        tracks child health progress.
+    end note
+    
+    note right of ai
+        AI System provides:
+        - Image analysis
+        - Clinical signs detection
+        - Fusion score calculation
+        - AI assistant chat
+    end note
+    
+    note right of db
+        Database stores:
+        - User accounts
+        - Child profiles
+        - Assessment records
+        - Gamification data
+    end note
+```
