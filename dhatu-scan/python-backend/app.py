@@ -525,7 +525,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-SECRET_KEY = "my_super_secret_for_dhatu_scan"
+SECRET_KEY = os.environ.get("SECRET_KEY", "fallback-only-for-local-dev")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7
 
@@ -559,6 +559,7 @@ from schemas import (
     UploadImageResponse as ApiUploadImageResponse,
 )
 Base.metadata.create_all(bind=engine)
+
 
 def verify_password(plain_password, hashed_password):
     return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
