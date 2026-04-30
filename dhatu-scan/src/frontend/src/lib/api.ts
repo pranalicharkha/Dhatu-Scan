@@ -1,15 +1,25 @@
 // Central API configuration for Dhatu-Scan
 // All fetch calls to the backend should import from here.
 
+// Production Render backend URL
+const PRODUCTION_BACKEND_URL = "https://dhatu-scan-backend.onrender.com";
+
 function resolveApiBase(): string {
-  // In production (Vercel), VITE_PY_BACKEND_URL must be set to the Render backend URL.
-  // In local dev, falls back to localhost:8000.
+  // Check Vercel environment variable first
   const envUrl = import.meta.env.VITE_PY_BACKEND_URL ?? import.meta.env.VITE_API_URL;
   if (typeof envUrl === "string" && envUrl.trim().length > 0) {
     return envUrl.replace(/\/$/, "");
   }
-  // Local development fallback only — never used in production
-  return "http://127.0.0.1:8000";
+  // If running on localhost → use local dev backend
+  if (typeof window !== "undefined") {
+    const host = window.location.hostname;
+    if (host === "localhost" || host === "127.0.0.1") {
+      return "http://127.0.0.1:8000";
+    }
+    // Any other host (Vercel, custom domain) → use production Render backend
+    return PRODUCTION_BACKEND_URL;
+  }
+  return PRODUCTION_BACKEND_URL;
 }
 
 export const API_BASE = resolveApiBase();
