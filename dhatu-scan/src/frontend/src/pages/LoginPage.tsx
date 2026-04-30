@@ -449,32 +449,43 @@ export default function LoginPage() {
 function ServerStatus() {
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
-  const [status, setStatus] = useState<"checking" | "online" | "offline">("checking");
+  const [status, setStatus] = useState<"checking" | "online" | "offline" | "waking">("checking");
 
   useState(() => {
-    fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(5000) })
+    // Show "waking" after 5s if still not connected (Render free tier cold start can take 30s)
+    const wakingTimer = setTimeout(() => {
+      setStatus((s) => s === "checking" ? "waking" : s);
+    }, 5000);
+
+    fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(25000) })
       .then((r) => {
+        clearTimeout(wakingTimer);
         if (r.ok) setStatus("online");
         else setStatus("offline");
       })
-      .catch(() => setStatus("offline"));
+      .catch(() => {
+        clearTimeout(wakingTimer);
+        setStatus("offline");
+      });
   });
 
   const colors = {
     checking: { dot: "#f59e0b", text: isDark ? "#d4a" : "#92400e" },
-    online: { dot: "#10b981", text: isDark ? "#6ee7b7" : "#047857" },
-    offline: { dot: "#ef4444", text: isDark ? "#fca5a5" : "#b91c1c" },
+    waking:   { dot: "#f59e0b", text: isDark ? "#fbbf24" : "#92400e" },
+    online:   { dot: "#10b981", text: isDark ? "#6ee7b7" : "#047857" },
+    offline:  { dot: "#ef4444", text: isDark ? "#fca5a5" : "#b91c1c" },
   };
 
   return (
     <div className="flex items-center gap-1.5 text-[11px] font-medium" style={{ color: colors[status].text }}>
       <span
-        className={`h-1.5 w-1.5 rounded-full ${status === "checking" ? "animate-pulse" : ""}`}
+        className={`h-1.5 w-1.5 rounded-full ${status === "checking" || status === "waking" ? "animate-pulse" : ""}`}
         style={{ backgroundColor: colors[status].dot }}
       />
       {status === "checking" && "Checking server..."}
-      {status === "online" && "Server connected"}
-      {status === "offline" && "Server offline — start backend"}
+      {status === "waking"   && "Server waking up, please wait (~30s)..."}
+      {status === "online"   && "Server connected"}
+      {status === "offline"  && "Server offline — contact support"}
     </div>
   );
 }
